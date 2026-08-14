@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator QR Absensi — Lotus Garden</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --cream:#FFFCF0; --ink:#2B2417; --gold:#C9A84C; --green:#21362B; }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Jost',sans-serif; background:#EFEAD9; color:var(--ink);
+    display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:20px;
+  }
+  .setup{
+    background:#fff; max-width:420px; width:100%; border-radius:10px; padding:20px 22px;
+    box-shadow:0 10px 30px -14px rgba(0,0,0,.25); margin-bottom:24px; font-size:13.5px; line-height:1.6;
+  }
+  .setup h2{ font-family:'Cormorant Garamond',serif; font-size:18px; margin:0 0 8px; }
+  .setup input{
+    width:100%; padding:9px 10px; margin-top:6px; border:1px solid #ddd; border-radius:6px; font-size:13px;
+  }
+  #printArea{
+    background:#fff; width:340px; padding:34px 24px; text-align:center;
+    border-radius:14px; box-shadow:0 20px 45px -20px rgba(0,0,0,.4); border:1px solid #eadfb8;
+  }
+  #printArea h1{ font-family:'Cormorant Garamond',serif; font-size:20px; color:var(--green); margin:0 0 2px; }
+  #printArea .sub{ font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:18px; }
+  #qrbox{ display:flex; justify-content:center; margin:10px 0 18px; }
+  #printArea .instr{ font-size:12.5px; color:#555; line-height:1.5; }
+  .wrap{ display:flex; flex-direction:column; align-items:center; }
+  button{
+    margin-top:18px; padding:11px 22px; border:none; border-radius:8px; background:var(--green);
+    color:#fff; font-family:'Jost',sans-serif; font-weight:600; cursor:pointer; font-size:13.5px;
+  }
+  @media print{
+    .setup, button{ display:none !important; }
+    body{ background:#fff; }
+    #printArea{ box-shadow:none; border:none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="setup">
+    <h2>1. Masukkan URL Web App Absensi</h2>
+    URL ini adalah alamat <b>index.html</b> Anda setelah di-hosting (GitHub Pages), <i>bukan</i> URL Google Apps Script.
+    <input id="urlInput" placeholder="https://username.github.io/absensi-lotus-garden/" oninput="generate()">
+  </div>
+
+  <div id="printArea">
+    <h1>Lotus Garden Hotel &amp; Restaurant</h1>
+    <div class="sub">Scan untuk Absensi OJT</div>
+    <div id="qrbox"></div>
+    <div class="instr">Peserta OJT: arahkan kamera HP ke kode ini saat tiba &amp; pulang.<br>Pastikan GPS &amp; koneksi internet aktif.</div>
+  </div>
+
+  <button onclick="window.print()">🖨️ Cetak Kode QR</button>
+</div>
+
+<script>
+let qrInstance = null;
+function generate(){
+  const url = document.getElementById('urlInput').value.trim() || 'https://ganti-dengan-url-anda.github.io/';
+  document.getElementById('qrbox').innerHTML = '';
+  qrInstance = new QRCode(document.getElementById('qrbox'), {
+    text: url, width: 210, height: 210, colorDark: '#21362B', colorLight: '#ffffff'
+  });
+}
+generate();
+</script>
+</body>
+</html>

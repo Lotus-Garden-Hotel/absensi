@@ -1,0 +1,17 @@
+{
+  "name": "Absensi OJT — Lotus Garden Hotel & Restaurant",
+  "short_name": "Absensi OJT",
+  "description": "Absensi QR untuk peserta OJT Lotus Garden Hotel & Restaurant, dengan validasi lokasi otomatis.",
+  "id": "/absensi-lotus-garden/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFCF0",
+  "theme_color": "#21362B",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
