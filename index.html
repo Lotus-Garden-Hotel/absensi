@@ -265,10 +265,11 @@
 
 <script>
 /* ====== KONFIGURASI ====== */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvuKQr7WH7KgT_pDm2btFi2irMajpoacLKO199jPoHwTld9Nw/exec';
+const GAS_URL = 'GANTI_DENGAN_URL_WEB_APP_GAS_ANDA';
 const HOTEL_LAT = -7.806625;
 const HOTEL_LNG = 112.0047489;
 const RADIUS_METER = 50;
+const MIN_JAM_KERJA = 8; // hanya untuk estimasi tampilan; validasi asli tetap di server
 
 /* ====== STATE ====== */
 let session = JSON.parse(localStorage.getItem('absensi_session') || 'null');
@@ -370,12 +371,30 @@ function updateChips(r){
   const chipM = $('chipMasuk'), chipP = $('chipPulang');
   chipM.classList.toggle('done', !!r.sudahMasuk);
   chipP.classList.toggle('done', !!r.sudahPulang);
-  chipM.querySelector('.v').textContent = r.jamMasuk ? r.jamMasuk.slice(0,5) : '--:--';
-  chipP.querySelector('.v').textContent = r.jamPulang ? r.jamPulang.slice(0,5) : '--:--';
+  chipM.querySelector('.v').textContent = formatJam(r.jamMasuk);
+  chipP.querySelector('.v').textContent = formatJam(r.jamPulang);
 
   window._sudahMasuk = !!r.sudahMasuk;
   window._sudahPulang = !!r.sudahPulang;
+  window._jamMasuk = r.jamMasuk || null;
   updateAbsenButton();
+}
+
+// Parsing jam yang defensif untuk tampilan chip.
+function formatJam(v){
+  if(!v) return '--:--';
+  const s = String(v);
+  if(s.includes('T')) return (s.split('T')[1] || '').slice(0,5); // jaga-jaga jika ada data lama bertipe Date
+  return s.slice(0,5);
+}
+
+// Bangun objek Date "hari ini" dari string jam "HH:mm:ss" (dipakai utk hitung gate 8 jam di HP)
+function jamKeDateHariIni(jamStr){
+  if(!jamStr) return null;
+  const parts = String(jamStr).split(':').map(Number);
+  const d = new Date();
+  d.setHours(parts[0]||0, parts[1]||0, parts[2]||0, 0);
+  return d;
 }
 
 function startGeolocation(){
@@ -423,11 +442,31 @@ function renderGauge(jarak){
 
 function updateAbsenButton(){
   const btn = $('btnAbsen');
+
+  // Sudah selesai Masuk & Pulang hari ini — kunci total, tidak bisa absen lagi.
   if(window._sudahMasuk && window._sudahPulang){
     btn.disabled = true;
-    btn.textContent = 'Absen hari ini selesai';
+    btn.textContent = 'Absen hari ini selesai ✓';
     return;
   }
+
+  // Sudah Masuk, menunggu Pulang — gate minimal MIN_JAM_KERJA jam sejak Masuk.
+  if(window._sudahMasuk && !window._sudahPulang){
+    const masukDate = jamKeDateHariIni(window._jamMasuk);
+    const now = new Date();
+    const elapsedMs = masukDate ? (now - masukDate) : 0;
+    const minMs = MIN_JAM_KERJA * 3600000;
+
+    if(masukDate && elapsedMs < minMs){
+      const sisaMs = minMs - elapsedMs;
+      const sisaJam = Math.floor(sisaMs / 3600000);
+      const sisaMenit = Math.floor((sisaMs % 3600000) / 60000);
+      btn.disabled = true;
+      btn.textContent = `Absen Pulang tersedia ${sisaJam}j ${sisaMenit}m lagi`;
+      return;
+    }
+  }
+
   const nextLabel = window._sudahMasuk ? 'Absen Pulang' : 'Absen Masuk';
   if(!lastCoords){
     btn.disabled = true;
@@ -447,7 +486,9 @@ function updateAbsenButton(){
 async function doAbsen(){
   if(!lastCoords) return;
   const btn = $('btnAbsen');
-  const prevLabel = btn.textContent;
+  // Kunci tombol SEGERA & JANGAN dilepas otomatis — status final tombol
+  // ditentukan ulang oleh refreshStatus()/updateAbsenButton() di bawah,
+  // supaya tidak ada celah dobel-tap yang bikin data numpuk.
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span>Mengirim…';
 
@@ -459,17 +500,19 @@ async function doAbsen(){
     if(!r.success){
       if(r.forceLogout){ doLogout(); return; }
       showToast(r.message || 'Absen gagal.', true);
+      updateAbsenButton(); // kembalikan tombol ke state yg sesuai (mis. masih dalam radius, boleh coba lagi)
       return;
     }
     showToast(`Absen ${r.jenis} berhasil — ${r.jam} (${r.jarak} m dari hotel)`);
-    await refreshStatus();
+    await refreshStatus(); // sumber kebenaran status tombol berikutnya berasal dari server, bukan asumsi klien
   }catch(e){
     showToast('Tidak dapat terhubung ke server.', true);
-  }finally{
-    btn.disabled = false;
     updateAbsenButton();
   }
 }
+
+// Perbarui hitung-mundur gate 8 jam setiap menit tanpa perlu panggil server
+setInterval(() => { if(session) updateAbsenButton(); }, 60000);
 
 /* ====== PWA: install prompt & service worker ====== */
 let deferredInstallPrompt = null;
