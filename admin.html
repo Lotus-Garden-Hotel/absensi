@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dashboard Absensi OJT — Lotus Garden Hotel & Restaurant</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';"></script>
+<script src="chart.min.js"></script>
+<script src="xlsx.min.js"></script>
 <style>
   :root{
     --cream:#FFFCF0; --cream-deep:#F5EFDA; --ink:#2B2417; --ink-soft:#6b6252;
@@ -92,7 +90,7 @@
   .badge{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; }
   .badge.masuk{ background:var(--ok-bg); color:var(--ok); }
   .badge.pulang{ background:#e8eef7; color:#3a5a8c; }
-  .badge.terlambat{ background:var(--warn-bg); color:var(--warn); margin-left:6px; }
+  .badge.belum{ background:var(--cream-deep); color:var(--ink-soft); }
   .empty-state{ text-align:center; padding:36px 10px; color:var(--ink-soft); font-size:13.5px; }
 
   .loading-row{ text-align:center; padding:24px; color:var(--ink-soft); font-size:13px; }
@@ -154,7 +152,7 @@
     <div class="cards">
       <div class="stat-card"><div class="k">Peserta OJT Aktif</div><div class="v" id="statAktif">—</div></div>
       <div class="stat-card ok"><div class="k">Hadir Hari Ini</div><div class="v" id="statHadirHariIni">—</div></div>
-      <div class="stat-card warn"><div class="k">Total Terlambat</div><div class="v" id="statTerlambat">—</div></div>
+      <div class="stat-card ok"><div class="k">Rata-rata Jam Kerja</div><div class="v" id="statRataJam">—</div></div>
       <div class="stat-card"><div class="k">Total Record</div><div class="v" id="statTotal">—</div></div>
     </div>
 
@@ -164,8 +162,8 @@
         <div class="chart-wrap"><canvas id="chartKehadiran"></canvas></div>
       </div>
       <div class="panel">
-        <h2>Tepat Waktu vs Terlambat</h2>
-        <div class="chart-wrap"><canvas id="chartTerlambat"></canvas></div>
+        <h2>Rata-rata Jam Kerja Harian</h2>
+        <div class="chart-wrap"><canvas id="chartJamKerja"></canvas></div>
       </div>
     </div>
 
@@ -176,7 +174,7 @@
           <thead>
             <tr>
               <th>Tanggal</th><th>ID OJT</th><th>Nama</th><th>Departemen</th><th>Asal Sekolah</th>
-              <th>Jenis</th><th>Jam</th><th>Jarak</th>
+              <th>Jam Masuk</th><th>Jam Pulang</th><th>Total Jam Kerja</th>
             </tr>
           </thead>
           <tbody id="tblBody">
@@ -190,12 +188,12 @@
 
 <script>
 /* ====== KONFIGURASI ====== */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvuKQr7WH7KgT_pDm2btFi2irMajpoacLKO199jPoHwTld9Nw/exec';
+const GAS_URL = 'GANTI_DENGAN_URL_WEB_APP_GAS_ANDA';
 
 const $ = (id) => document.getElementById(id);
 let adminToken = localStorage.getItem('absensi_admin_token') || null;
 let currentRows = [];
-let chartKehadiranInst = null, chartTerlambatInst = null;
+let chartKehadiranInst = null, chartJamKerjaInst = null;
 
 async function callApi(payload){
   const res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify(payload) });
@@ -251,13 +249,13 @@ async function loadData(){
   const departemen = $('fDept').value;
   if(!startDate || !endDate){ return; }
 
-  $('tblBody').innerHTML = '<tr><td colspan="7" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
+  $('tblBody').innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
 
   try{
     const r = await callApi({ action:'adminGetData', token: adminToken, startDate, endDate, departemen });
     if(!r.success){
       if(r.forceLogout){ doAdminLogout(); return; }
-      $('tblBody').innerHTML = `<tr><td colspan="7" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
+      $('tblBody').innerHTML = `<tr><td colspan="8" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
       return;
     }
     currentRows = r.rows;
@@ -265,16 +263,16 @@ async function loadData(){
     renderSummary(r.summary);
     renderTable(r.rows);
 
-    // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat (mis. CDN
-    // diblokir jaringan), tabel & ringkasan yg sudah berhasil dimuat TIDAK ikut hilang.
+    // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat, tabel & ringkasan
+    // yg sudah berhasil dimuat TIDAK ikut hilang.
     try{
-      renderCharts(r.chartKehadiran, r.summary);
+      renderCharts(r.chartKehadiran, r.chartJamKerja);
     }catch(chartErr){
       console.error('Gagal render grafik:', chartErr);
       $('chartKehadiran').closest('.panel').querySelector('.chart-wrap').innerHTML =
-        '<div class="empty-state">Grafik gagal dimuat (cek koneksi/CDN).</div>';
-      $('chartTerlambat').closest('.panel').querySelector('.chart-wrap').innerHTML =
-        '<div class="empty-state">Grafik gagal dimuat (cek koneksi/CDN).</div>';
+        '<div class="empty-state">Grafik gagal dimuat.</div>';
+      $('chartJamKerja').closest('.panel').querySelector('.chart-wrap').innerHTML =
+        '<div class="empty-state">Grafik gagal dimuat.</div>';
     }
   }catch(e){
     console.error('Gagal memuat data absensi:', e);
@@ -293,7 +291,7 @@ function renderDeptFilter(list, selected){
 function renderSummary(s){
   $('statAktif').textContent = s.totalPesertaAktif;
   $('statHadirHariIni').textContent = s.hadirHariIni;
-  $('statTerlambat').textContent = s.totalTerlambat;
+  $('statRataJam').textContent = s.rataJamKerja ? s.rataJamKerja + ' j' : '-';
   $('statTotal').textContent = s.totalRecord;
 }
 
@@ -309,16 +307,16 @@ function renderTable(rows){
       <td>${r.nama}</td>
       <td>${r.departemen || '-'}</td>
       <td>${r.asalSekolah || '-'}</td>
-      <td><span class="badge ${r.jenis === 'Masuk' ? 'masuk' : 'pulang'}">${r.jenis}</span>${r.terlambat ? '<span class="badge terlambat">Terlambat</span>' : ''}</td>
-      <td>${r.jam}</td>
-      <td>${r.jarak} m</td>
+      <td>${r.jamMasuk ? `<span class="badge masuk">${r.jamMasuk.slice(0,5)}</span>` : `<span class="badge belum">-</span>`}</td>
+      <td>${r.jamPulang ? `<span class="badge pulang">${r.jamPulang.slice(0,5)}</span>` : `<span class="badge belum">Belum pulang</span>`}</td>
+      <td>${r.totalJamKerja || '-'}</td>
     </tr>
   `).join('');
 }
 
-function renderCharts(chartKehadiran, summary){
+function renderCharts(chartKehadiran, chartJamKerja){
   if(typeof Chart === 'undefined'){
-    throw new Error('Chart.js belum termuat (CDN gagal diakses).');
+    throw new Error('Chart.js belum termuat.');
   }
   const labels = chartKehadiran.map(d => d.tanggal.slice(5));
   const data = chartKehadiran.map(d => d.jumlah);
@@ -334,15 +332,18 @@ function renderCharts(chartKehadiran, summary){
     }
   });
 
-  const tepatWaktu = Math.max(0, summary.totalRecord - summary.totalTerlambat);
-  if(chartTerlambatInst) chartTerlambatInst.destroy();
-  chartTerlambatInst = new Chart($('chartTerlambat'), {
-    type: 'doughnut',
-    data: {
-      labels: ['Tepat Waktu / Lainnya', 'Terlambat'],
-      datasets: [{ data: [tepatWaktu, summary.totalTerlambat], backgroundColor: ['#3F7052', '#B5483D'] }]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } } }
+  const labelsJk = chartJamKerja.map(d => d.tanggal.slice(5));
+  const dataJk = chartJamKerja.map(d => d.rataJam);
+
+  if(chartJamKerjaInst) chartJamKerjaInst.destroy();
+  chartJamKerjaInst = new Chart($('chartJamKerja'), {
+    type: 'line',
+    data: { labels: labelsJk, datasets: [{ label: 'Rata-rata Jam Kerja', data: dataJk, borderColor: '#3F7052', backgroundColor: 'rgba(63,112,82,.15)', fill:true, tension:.3 }] },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ y:{ beginAtZero:true, title:{ display:true, text:'Jam' } } }
+    }
   });
 }
 
@@ -351,10 +352,10 @@ function exportExcel(){
   if(!currentRows.length){ alert('Tidak ada data untuk diexport.'); return; }
   const data = currentRows.map(r => ({
     Tanggal: r.tanggal, 'ID OJT': r.id, Nama: r.nama, Departemen: r.departemen, 'Asal Sekolah': r.asalSekolah,
-    Jenis: r.jenis, Jam: r.jam, 'Jarak (m)': r.jarak, Status: r.terlambat ? 'Terlambat' : 'Tepat Waktu'
+    'Jam Masuk': r.jamMasuk || '-', 'Jam Pulang': r.jamPulang || '-', 'Total Jam Kerja': r.totalJamKerja || '-'
   }));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:12},{wch:10},{wch:22},{wch:16},{wch:20},{wch:9},{wch:10},{wch:9},{wch:12}];
+  ws['!cols'] = [{wch:12},{wch:10},{wch:22},{wch:16},{wch:20},{wch:10},{wch:10},{wch:14}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi');
   const fname = `Rekap_Absensi_OJT_${$('fStart').value}_sd_${$('fEnd').value}.xlsx`;
