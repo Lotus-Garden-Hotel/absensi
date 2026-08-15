@@ -269,8 +269,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvu
 const HOTEL_LAT = -7.806625;
 const HOTEL_LNG = 112.0047489;
 const RADIUS_METER = 50;
-const MIN_JAM_KERJA = 8; // hanya untuk estimasi tampilan; validasi asli tetap di server
-
+const MIN_JAM_KERJA_DEFAULT = 8; // fallback jika status belum sempat dimuat; nilai asli datang dari server (beda2 sesuai hari & departemen)
 
 /* ====== STATE ====== */
 let session = JSON.parse(localStorage.getItem('absensi_session') || 'null');
@@ -378,6 +377,7 @@ function updateChips(r){
   window._sudahMasuk = !!r.sudahMasuk;
   window._sudahPulang = !!r.sudahPulang;
   window._jamMasuk = r.jamMasuk || null;
+  window._minJamKerja = r.minJamKerja || MIN_JAM_KERJA_DEFAULT;
   updateAbsenButton();
 }
 
@@ -451,12 +451,15 @@ function updateAbsenButton(){
     return;
   }
 
-  // Sudah Masuk, menunggu Pulang — gate minimal MIN_JAM_KERJA jam sejak Masuk.
+  // Sudah Masuk, menunggu Pulang — gate minimal sekian jam sejak Masuk.
+  // Angka jamnya datang dari server (window._minJamKerja) karena bisa beda
+  // tergantung hari & departemen (mis. Sabtu utk TKJ IT/Sales/Back Office = 6 jam).
   if(window._sudahMasuk && !window._sudahPulang){
     const masukDate = jamKeDateHariIni(window._jamMasuk);
     const now = new Date();
     const elapsedMs = masukDate ? (now - masukDate) : 0;
-    const minMs = MIN_JAM_KERJA * 3600000;
+    const minJam = window._minJamKerja || MIN_JAM_KERJA_DEFAULT;
+    const minMs = minJam * 3600000;
 
     if(masukDate && elapsedMs < minMs){
       const sisaMs = minMs - elapsedMs;
