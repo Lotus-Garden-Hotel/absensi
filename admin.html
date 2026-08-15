@@ -173,12 +173,12 @@
         <table>
           <thead>
             <tr>
-              <th>Tanggal</th><th>ID OJT</th><th>Nama</th><th>Departemen</th>
+              <th>Tanggal</th><th>ID OJT</th><th>Nama</th><th>Departemen</th><th>Asal Sekolah</th>
               <th>Jenis</th><th>Jam</th><th>Jarak</th>
             </tr>
           </thead>
           <tbody id="tblBody">
-            <tr><td colspan="7" class="loading-row">Memuat data…</td></tr>
+            <tr><td colspan="8" class="loading-row">Memuat data…</td></tr>
           </tbody>
         </table>
       </div>
@@ -285,7 +285,7 @@ function renderSummary(s){
 
 function renderTable(rows){
   if(!rows.length){
-    $('tblBody').innerHTML = '<tr><td colspan="7" class="empty-state">Tidak ada data absensi pada rentang/filter ini.</td></tr>';
+    $('tblBody').innerHTML = '<tr><td colspan="8" class="empty-state">Tidak ada data absensi pada rentang/filter ini.</td></tr>';
     return;
   }
   $('tblBody').innerHTML = rows.map(r => `
@@ -294,6 +294,7 @@ function renderTable(rows){
       <td>${r.id}</td>
       <td>${r.nama}</td>
       <td>${r.departemen || '-'}</td>
+      <td>${r.asalSekolah || '-'}</td>
       <td><span class="badge ${r.jenis === 'Masuk' ? 'masuk' : 'pulang'}">${r.jenis}</span>${r.terlambat ? '<span class="badge terlambat">Terlambat</span>' : ''}</td>
       <td>${r.jam}</td>
       <td>${r.jarak} m</td>
@@ -332,11 +333,11 @@ function renderCharts(chartKehadiran, summary){
 function exportExcel(){
   if(!currentRows.length){ alert('Tidak ada data untuk diexport.'); return; }
   const data = currentRows.map(r => ({
-    Tanggal: r.tanggal, 'ID OJT': r.id, Nama: r.nama, Departemen: r.departemen,
+    Tanggal: r.tanggal, 'ID OJT': r.id, Nama: r.nama, Departemen: r.departemen, 'Asal Sekolah': r.asalSekolah,
     Jenis: r.jenis, Jam: r.jam, 'Jarak (m)': r.jarak, Status: r.terlambat ? 'Terlambat' : 'Tepat Waktu'
   }));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:12},{wch:10},{wch:22},{wch:16},{wch:9},{wch:10},{wch:9},{wch:12}];
+  ws['!cols'] = [{wch:12},{wch:10},{wch:22},{wch:16},{wch:20},{wch:9},{wch:10},{wch:9},{wch:12}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi');
   const fname = `Rekap_Absensi_OJT_${$('fStart').value}_sd_${$('fEnd').value}.xlsx`;
