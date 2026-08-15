@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dashboard Absensi OJT — Lotus Garden Hotel & Restaurant</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';"></script>
 <style>
   :root{
     --cream:#FFFCF0; --cream-deep:#F5EFDA; --ink:#2B2417; --ink-soft:#6b6252;
@@ -262,9 +264,21 @@ async function loadData(){
     renderDeptFilter(r.daftarDepartemen, departemen);
     renderSummary(r.summary);
     renderTable(r.rows);
-    renderCharts(r.chartKehadiran, r.summary);
+
+    // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat (mis. CDN
+    // diblokir jaringan), tabel & ringkasan yg sudah berhasil dimuat TIDAK ikut hilang.
+    try{
+      renderCharts(r.chartKehadiran, r.summary);
+    }catch(chartErr){
+      console.error('Gagal render grafik:', chartErr);
+      $('chartKehadiran').closest('.panel').querySelector('.chart-wrap').innerHTML =
+        '<div class="empty-state">Grafik gagal dimuat (cek koneksi/CDN).</div>';
+      $('chartTerlambat').closest('.panel').querySelector('.chart-wrap').innerHTML =
+        '<div class="empty-state">Grafik gagal dimuat (cek koneksi/CDN).</div>';
+    }
   }catch(e){
-    $('tblBody').innerHTML = '<tr><td colspan="7" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
+    console.error('Gagal memuat data absensi:', e);
+    $('tblBody').innerHTML = '<tr><td colspan="8" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
   }
 }
 
@@ -303,6 +317,9 @@ function renderTable(rows){
 }
 
 function renderCharts(chartKehadiran, summary){
+  if(typeof Chart === 'undefined'){
+    throw new Error('Chart.js belum termuat (CDN gagal diakses).');
+  }
   const labels = chartKehadiran.map(d => d.tanggal.slice(5));
   const data = chartKehadiran.map(d => d.jumlah);
 
