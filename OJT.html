@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Absensi OJT — Lotus Garden Hotel & Restaurant</title>
+
+<!-- PWA: agar bisa "Add to Home screen" / install sebagai app di Chrome Android -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#21362B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Absensi OJT">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFFCF0;
+    --cream-deep:#F5EFDA;
+    --ink:#2B2417;
+    --ink-soft:#6b6252;
+    --gold:#C9A84C;
+    --gold-deep:#a8863a;
+    --green:#21362B;
+    --ok:#3F7052;
+    --ok-bg:#e7f0e8;
+    --warn:#B5483D;
+    --warn-bg:#fbeae7;
+    --radius-card:18px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    min-height:100dvh;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(circle at 20% -10%, rgba(201,168,76,0.18), transparent 45%),
+      radial-gradient(circle at 100% 110%, rgba(33,54,43,0.10), transparent 50%),
+      var(--cream);
+    font-family:'Jost', sans-serif;
+    color:var(--ink);
+    padding:20px;
+  }
+  .card{
+    width:100%; max-width:400px;
+    background:#fff;
+    border-radius:var(--radius-card);
+    box-shadow:0 18px 40px -18px rgba(43,36,23,0.35);
+    overflow:hidden;
+    border:1px solid rgba(201,168,76,0.25);
+  }
+  .brandbar{
+    background:linear-gradient(135deg, var(--green), #16241c);
+    color:var(--cream);
+    padding:22px 24px 18px;
+    text-align:center;
+    position:relative;
+  }
+  .brandbar::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:-1px; height:6px;
+    background:linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .logo-img{
+    width:56px; height:56px; margin:0 auto 8px;
+    display:block; object-fit:contain;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));
+  }
+  .brandbar h1{
+    font-family:'Cormorant Garamond', serif;
+    font-weight:600; font-size:22px; margin:0; letter-spacing:.5px;
+  }
+  .brandbar p{
+    margin:4px 0 0; font-size:11px; letter-spacing:2.5px;
+    text-transform:uppercase; color:var(--gold); font-weight:500;
+  }
+  .body-pad{ padding:26px 24px 28px; }
+
+  /* ---------- LOGIN ---------- */
+  .field{ margin-bottom:16px; }
+  .field label{
+    display:block; font-size:11.5px; letter-spacing:1.2px; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:6px; font-weight:500;
+  }
+  .field input{
+    width:100%; padding:13px 14px; border-radius:10px;
+    border:1.5px solid #e6dfc9; background:var(--cream);
+    font-family:'Jost',sans-serif; font-size:16px; color:var(--ink);
+    outline:none; transition:border-color .15s;
+  }
+  .field input:focus{ border-color:var(--gold); }
+  .btn{
+    width:100%; padding:14px; border:none; border-radius:10px;
+    font-family:'Jost',sans-serif; font-weight:600; font-size:14.5px;
+    letter-spacing:.5px; cursor:pointer; transition:transform .12s, box-shadow .12s, opacity .12s;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn-gold{ background:var(--gold); color:#fff; box-shadow:0 8px 18px -8px rgba(201,168,76,0.7); }
+  .btn-gold:hover{ background:var(--gold-deep); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; box-shadow:none; }
+  .err-msg{
+    background:var(--warn-bg); color:var(--warn); font-size:13px;
+    padding:10px 12px; border-radius:8px; margin-bottom:14px; display:none;
+  }
+
+  /* ---------- ABSEN SCREEN ---------- */
+  .greet{ text-align:center; margin-bottom:6px; }
+  .greet .hi{ font-size:11.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-soft); }
+  .greet .nama{ font-family:'Cormorant Garamond', serif; font-size:26px; font-weight:700; margin:2px 0 0; }
+  .greet .jab{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
+
+  .gauge-wrap{
+    position:relative; width:184px; height:184px; margin:20px auto 8px;
+  }
+  .gauge-ring{
+    width:100%; height:100%; border-radius:50%;
+    background: conic-gradient(var(--ok) calc(var(--pct,0)*1%), #ece5d0 0);
+    display:flex; align-items:center; justify-content:center;
+    transition: background .4s ease;
+  }
+  .gauge-inner{
+    width:150px; height:150px; border-radius:50%;
+    background:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow: inset 0 0 0 1px rgba(43,36,23,0.06);
+  }
+  .gauge-inner .m{ font-family:'Cormorant Garamond', serif; font-size:34px; font-weight:700; line-height:1; }
+  .gauge-inner .m span{ font-size:14px; font-family:'Jost',sans-serif; font-weight:500; color:var(--ink-soft); }
+  .gauge-inner .lbl{ font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-soft); margin-top:5px; }
+  .gauge-dot{
+    position:absolute; top:6px; left:50%; width:10px; height:10px; margin-left:-5px;
+    border-radius:50%; background:var(--gold);
+    box-shadow:0 0 0 4px rgba(201,168,76,0.25);
+    animation:pulse 1.8s infinite;
+  }
+  @keyframes pulse{ 0%,100%{transform:scale(1);} 50%{transform:scale(1.25);} }
+
+  .status-line{
+    text-align:center; font-size:13px; margin:10px 0 18px; min-height:18px;
+    color:var(--ink-soft);
+  }
+  .status-line.ok{ color:var(--ok); font-weight:500; }
+  .status-line.bad{ color:var(--warn); font-weight:500; }
+
+  .chips{
+    display:flex; gap:10px; margin-bottom:18px;
+  }
+  .chip{
+    flex:1; border-radius:10px; padding:10px 8px; text-align:center;
+    background:var(--cream); border:1px solid #eee3c4;
+  }
+  .chip.done{ background:var(--ok-bg); border-color:#cfe3d3; }
+  .chip .k{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-soft); }
+  .chip .v{ font-family:'Cormorant Garamond', serif; font-weight:700; font-size:17px; margin-top:2px; }
+
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translate(-50%, 20px);
+    background:var(--green); color:#fff; padding:13px 20px; border-radius:10px;
+    font-size:14px; opacity:0; pointer-events:none; transition:all .3s ease;
+    box-shadow:0 12px 24px -8px rgba(0,0,0,0.4); max-width:88vw; text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%, 0); }
+  .toast.bad{ background:#5c2620; }
+
+  .logout{
+    display:block; text-align:center; margin-top:6px; font-size:12px;
+    color:var(--ink-soft); text-decoration:underline; cursor:pointer; background:none; border:none;
+    width:100%; font-family:'Jost',sans-serif;
+  }
+  .install-bar{
+    display:none; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--cream-deep); border:1px solid #eadfb8; border-radius:10px;
+    padding:10px 12px; margin-bottom:16px; font-size:12.5px;
+  }
+  .install-bar.show{ display:flex; }
+  .install-bar span{ color:var(--ink-soft); line-height:1.35; }
+  .install-bar button{
+    flex-shrink:0; border:none; background:var(--gold); color:#fff; font-weight:600;
+    font-family:'Jost',sans-serif; font-size:12.5px; padding:8px 14px; border-radius:8px; cursor:pointer;
+  }
+  .hidden{ display:none !important; }
+  .spin{
+    width:16px; height:16px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.5); border-top-color:#fff;
+    display:inline-block; vertical-align:-3px; margin-right:6px;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brandbar">
+    <img class="logo-img" src="logo.png" alt="Lotus Garden Hotel & Restaurant">
+    <h1>Lotus Garden Hotel &amp; Restaurant</h1>
+    <p>Absensi Peserta OJT</p>
+  </div>
+
+  <div class="body-pad">
+
+    <div class="install-bar" id="installBar">
+      <span>Install aplikasi ini di HP Anda untuk akses lebih cepat.</span>
+      <button onclick="installApp()">Install</button>
+    </div>
+
+    <!-- ===== LOGIN SCREEN ===== -->
+    <div id="screenLogin">
+      <div class="err-msg" id="loginErr"></div>
+      <div class="field">
+        <label>ID OJT</label>
+        <input id="inpId" type="text" inputmode="text" autocomplete="off" placeholder="cth. OJT001">
+      </div>
+      <div class="field">
+        <label>PIN</label>
+        <input id="inpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+      </div>
+      <button class="btn btn-gold" id="btnLogin" onclick="doLogin()">Masuk</button>
+      <button class="logout" onclick="bukaDaftar()">Belum punya akun? Daftar di sini</button>
+    </div>
+
+    <!-- ===== DAFTAR SCREEN ===== -->
+    <div id="screenDaftar" class="hidden">
+      <div class="err-msg" id="daftarErr"></div>
+
+      <div id="daftarForm">
+        <div class="field">
+          <label>Nama Lengkap</label>
+          <input id="dInpNama" type="text" autocomplete="off" placeholder="Nama sesuai identitas">
+        </div>
+        <div class="field">
+          <label>Asal Sekolah</label>
+          <input id="dInpAsalSekolah" type="text" autocomplete="off" placeholder="cth. SMK Contoh 1">
+        </div>
+        <div class="field">
+          <label>Departemen</label>
+          <select id="dInpDepartemen">
+            <option value="">Memuat daftar departemen…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Buat PIN (4-8 digit angka)</label>
+          <input id="dInpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <div class="field">
+          <label>Ulangi PIN</label>
+          <input id="dInpPinKonfirmasi" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <button class="btn btn-gold" id="btnDaftar" onclick="doDaftar()">Daftar</button>
+        <button class="logout" onclick="tutupDaftar()">Sudah punya akun? Kembali ke Masuk</button>
+      </div>
+
+      <div id="daftarSukses" class="hidden">
+        <div class="status-line ok" style="font-size:15px; margin-bottom:4px;">Pendaftaran berhasil! 🎉</div>
+        <div class="status-line" style="margin-bottom:18px;">
+          ID OJT Anda: <b id="daftarIdBaru" style="color:var(--ink); font-size:16px;">—</b><br>
+          Simpan ID ini untuk login berikutnya.
+        </div>
+        <button class="btn btn-gold" onclick="lanjutSetelahDaftar()">Lanjut ke Absen →</button>
+      </div>
+    </div>
+
+    <!-- ===== ABSEN SCREEN ===== -->
+    <div id="screenAbsen" class="hidden">
+      <div class="greet">
+        <div class="hi">Selamat datang</div>
+        <div class="nama" id="txtNama">—</div>
+        <div class="jab" id="txtDepartemen">—</div>
+      </div>
+
+      <div class="gauge-wrap">
+        <div class="gauge-dot" id="gaugeDot"></div>
+        <div class="gauge-ring" id="gaugeRing" style="--pct:0;">
+          <div class="gauge-inner">
+            <div class="m" id="gaugeMeter">—<span> m</span></div>
+            <div class="lbl">Jarak ke hotel</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-line" id="gpsStatus">Mengambil lokasi GPS…</div>
+
+      <div class="chips">
+        <div class="chip" id="chipMasuk">
+          <div class="k">Masuk</div>
+          <div class="v">--:--</div>
+        </div>
+        <div class="chip" id="chipPulang">
+          <div class="k">Pulang</div>
+          <div class="v">--:--</div>
+        </div>
+      </div>
+
+      <button class="btn btn-gold" id="btnAbsen" onclick="doAbsen()" disabled>Menunggu lokasi…</button>
+      <button class="logout" onclick="doLogout()">Keluar dari sesi ini</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ====== KONFIGURASI ====== */
+const GAS_URL = 'GANTI_DENGAN_URL_WEB_APP_GAS_ANDA';
+const HOTEL_LAT = -7.806625;
+const HOTEL_LNG = 112.0047489;
+const RADIUS_METER = 50;
+const MIN_JAM_KERJA_DEFAULT = 8; // fallback jika status belum sempat dimuat; nilai asli datang dari server (beda2 sesuai hari & departemen)
+
+/* ====== STATE ====== */
+let session = JSON.parse(localStorage.getItem('absensi_session') || 'null');
+let lastCoords = null;
+let watchId = null;
+
+const $ = (id) => document.getElementById(id);
+
+function showToast(msg, bad){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=> t.className = 'toast', 3200);
+}
+
+async function callApi(payload){
+  const res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify(payload) });
+  return res.json();
+}
+
+/* ====== HAVERSINE (perkiraan di sisi klien, validasi asli tetap di server) ====== */
+function distanceMeters(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+/* ====== LOGIN ====== */
+async function doLogin(){
+  const id = $('inpId').value.trim();
+  const pin = $('inpPin').value.trim();
+  const err = $('loginErr');
+  err.style.display = 'none';
+
+  if(!id || !pin){
+    err.textContent = 'ID dan PIN wajib diisi.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnLogin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Memeriksa…';
+
+  try{
+    const r = await callApi({ action:'login', id, pin });
+    if(!r.success){
+      err.textContent = r.message || 'Login gagal.';
+      err.style.display = 'block';
+      return;
+    }
+    session = { id: r.id, nama: r.nama, departemen: r.departemen, token: r.token };
+    localStorage.setItem('absensi_session', JSON.stringify(session));
+    enterAbsenScreen();
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server. Cek koneksi internet.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Masuk';
+  }
+}
+
+function doLogout(){
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  localStorage.removeItem('absensi_session');
+  session = null;
+  $('screenAbsen').classList.add('hidden');
+  $('screenLogin').classList.remove('hidden');
+  $('inpPin').value = '';
+}
+
+/* ====== DAFTAR (SELF-REGISTRATION) ====== */
+let daftarInfoLoaded = false;
+
+async function bukaDaftar(){
+  $('screenLogin').classList.add('hidden');
+  $('screenDaftar').classList.remove('hidden');
+  $('daftarForm').classList.remove('hidden');
+  $('daftarSukses').classList.add('hidden');
+  $('daftarErr').style.display = 'none';
+
+  if(!daftarInfoLoaded){
+    try{
+      const r = await callApi({ action:'daftarInfo' });
+      const sel = $('dInpDepartemen');
+      if(r.success && r.daftarDepartemen && r.daftarDepartemen.length){
+        sel.innerHTML = '<option value="">Pilih departemen…</option>' +
+          r.daftarDepartemen.map(d => `<option value="${d}">${d}</option>`).join('');
+        daftarInfoLoaded = true;
+      }else{
+        sel.innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+      }
+    }catch(e){
+      $('dInpDepartemen').innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+    }
+  }
+}
+
+function tutupDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  $('screenLogin').classList.remove('hidden');
+}
+
+async function doDaftar(){
+  const nama = $('dInpNama').value.trim();
+  const asalSekolah = $('dInpAsalSekolah').value.trim();
+  const departemen = $('dInpDepartemen').value;
+  const pin = $('dInpPin').value.trim();
+  const pinKonfirmasi = $('dInpPinKonfirmasi').value.trim();
+  const err = $('daftarErr');
+  err.style.display = 'none';
+
+  if(!nama || !asalSekolah || !departemen || !pin){
+    err.textContent = 'Semua field wajib diisi.';
+    err.style.display = 'block';
+    return;
+  }
+  if(!/^\d{4,8}$/.test(pin)){
+    err.textContent = 'PIN harus angka, 4-8 digit.';
+    err.style.display = 'block';
+    return;
+  }
+  if(pin !== pinKonfirmasi){
+    err.textContent = 'PIN dan Ulangi PIN tidak sama.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnDaftar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Mendaftarkan…';
+
+  try{
+    const r = await callApi({ action:'daftar', nama, asalSekolah, departemen, pin });
+    if(!r.success){
+      err.textContent = r.message || 'Pendaftaran gagal.';
+      err.style.display = 'block';
+      return;
+    }
+    session = { id: r.id, nama: r.nama, departemen: r.departemen, token: r.token };
+    localStorage.setItem('absensi_session', JSON.stringify(session));
+
+    $('daftarIdBaru').textContent = r.id;
+    $('daftarForm').classList.add('hidden');
+    $('daftarSukses').classList.remove('hidden');
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server. Cek koneksi internet.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Daftar';
+  }
+}
+
+function lanjutSetelahDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  enterAbsenScreen();
+}
+
+/* ====== ABSEN SCREEN ====== */
+function enterAbsenScreen(){
+  $('screenLogin').classList.add('hidden');
+  $('screenAbsen').classList.remove('hidden');
+  $('txtNama').textContent = session.nama;
+  $('txtDepartemen').textContent = session.departemen || '';
+  refreshStatus();
+  startGeolocation();
+}
+
+async function refreshStatus(){
+  try{
+    const r = await callApi({ action:'status', id: session.id, token: session.token });
+    if(!r.success){
+      if(r.forceLogout) doLogout();
+      return;
+    }
+    updateChips(r);
+  }catch(e){ /* diamkan, tidak kritikal utk UX awal */ }
+}
+
+function updateChips(r){
+  if(r.departemen) $('txtDepartemen').textContent = r.departemen;
+  const chipM = $('chipMasuk'), chipP = $('chipPulang');
+  chipM.classList.toggle('done', !!r.sudahMasuk);
+  chipP.classList.toggle('done', !!r.sudahPulang);
+  chipM.querySelector('.v').textContent = formatJam(r.jamMasuk);
+  chipP.querySelector('.v').textContent = formatJam(r.jamPulang);
+
+  window._sudahMasuk = !!r.sudahMasuk;
+  window._sudahPulang = !!r.sudahPulang;
+  window._jamMasuk = r.jamMasuk || null;
+  window._minJamKerja = r.minJamKerja || MIN_JAM_KERJA_DEFAULT;
+  updateAbsenButton();
+}
+
+// Parsing jam yang defensif untuk tampilan chip.
+function formatJam(v){
+  if(!v) return '--:--';
+  const s = String(v);
+  if(s.includes('T')) return (s.split('T')[1] || '').slice(0,5); // jaga-jaga jika ada data lama bertipe Date
+  return s.slice(0,5);
+}
+
+// Bangun objek Date "hari ini" dari string jam "HH:mm:ss" (dipakai utk hitung gate 8 jam di HP)
+function jamKeDateHariIni(jamStr){
+  if(!jamStr) return null;
+  const parts = String(jamStr).split(':').map(Number);
+  const d = new Date();
+  d.setHours(parts[0]||0, parts[1]||0, parts[2]||0, 0);
+  return d;
+}
+
+function startGeolocation(){
+  if(!navigator.geolocation){
+    $('gpsStatus').textContent = 'Perangkat tidak mendukung GPS.';
+    $('gpsStatus').className = 'status-line bad';
+    return;
+  }
+  watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+    enableHighAccuracy: true, maximumAge: 4000, timeout: 15000
+  });
+}
+
+function onPositionError(err){
+  $('gpsStatus').textContent = 'Gagal mengambil lokasi. Aktifkan izin GPS di browser.';
+  $('gpsStatus').className = 'status-line bad';
+  $('btnAbsen').disabled = true;
+  $('btnAbsen').textContent = 'Lokasi tidak tersedia';
+}
+
+function onPosition(pos){
+  lastCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  const jarak = Math.round(distanceMeters(HOTEL_LAT, HOTEL_LNG, lastCoords.lat, lastCoords.lng));
+  renderGauge(jarak);
+  updateAbsenButton();
+}
+
+function renderGauge(jarak){
+  const pct = Math.max(0, Math.min(100, Math.round((1 - jarak / (RADIUS_METER*3)) * 100)));
+  const inRange = jarak <= RADIUS_METER;
+  $('gaugeMeter').innerHTML = jarak + '<span> m</span>';
+  $('gaugeRing').style.setProperty('--pct', pct);
+  $('gaugeRing').style.background =
+    `conic-gradient(${inRange ? 'var(--ok)' : 'var(--warn)'} calc(var(--pct)*1%), #ece5d0 0)`;
+
+  const st = $('gpsStatus');
+  if(inRange){
+    st.textContent = 'Anda berada di dalam area hotel ✓';
+    st.className = 'status-line ok';
+  }else{
+    st.textContent = 'Di luar area hotel — mendekat ' + (jarak - RADIUS_METER) + ' m lagi';
+    st.className = 'status-line bad';
+  }
+}
+
+function updateAbsenButton(){
+  const btn = $('btnAbsen');
+
+  // Sudah selesai Masuk & Pulang hari ini — kunci total, tidak bisa absen lagi.
+  if(window._sudahMasuk && window._sudahPulang){
+    btn.disabled = true;
+    btn.textContent = 'Absen hari ini selesai ✓';
+    return;
+  }
+
+  // Sudah Masuk, menunggu Pulang — gate minimal sekian jam sejak Masuk.
+  // Angka jamnya datang dari server (window._minJamKerja) karena bisa beda
+  // tergantung hari & departemen (mis. Sabtu utk TKJ IT/Sales/Back Office = 6 jam).
+  if(window._sudahMasuk && !window._sudahPulang){
+    const masukDate = jamKeDateHariIni(window._jamMasuk);
+    const now = new Date();
+    const elapsedMs = masukDate ? (now - masukDate) : 0;
+    const minJam = window._minJamKerja || MIN_JAM_KERJA_DEFAULT;
+    const minMs = minJam * 3600000;
+
+    if(masukDate && elapsedMs < minMs){
+      const sisaMs = minMs - elapsedMs;
+      const sisaJam = Math.floor(sisaMs / 3600000);
+      const sisaMenit = Math.floor((sisaMs % 3600000) / 60000);
+      btn.disabled = true;
+      btn.textContent = `Absen Pulang tersedia ${sisaJam}j ${sisaMenit}m lagi`;
+      return;
+    }
+  }
+
+  const nextLabel = window._sudahMasuk ? 'Absen Pulang' : 'Absen Masuk';
+  if(!lastCoords){
+    btn.disabled = true;
+    btn.textContent = 'Menunggu lokasi…';
+    return;
+  }
+  const jarak = Math.round(distanceMeters(HOTEL_LAT, HOTEL_LNG, lastCoords.lat, lastCoords.lng));
+  if(jarak > RADIUS_METER){
+    btn.disabled = true;
+    btn.textContent = nextLabel + ' (di luar radius)';
+  }else{
+    btn.disabled = false;
+    btn.textContent = nextLabel;
+  }
+}
+
+async function doAbsen(){
+  if(!lastCoords) return;
+  const btn = $('btnAbsen');
+  // Kunci tombol SEGERA & JANGAN dilepas otomatis — status final tombol
+  // ditentukan ulang oleh refreshStatus()/updateAbsenButton() di bawah,
+  // supaya tidak ada celah dobel-tap yang bikin data numpuk.
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Mengirim…';
+
+  try{
+    const r = await callApi({
+      action:'absen', id: session.id, token: session.token,
+      lat: lastCoords.lat, lng: lastCoords.lng
+    });
+    if(!r.success){
+      if(r.forceLogout){ doLogout(); return; }
+      showToast(r.message || 'Absen gagal.', true);
+      updateAbsenButton(); // kembalikan tombol ke state yg sesuai (mis. masih dalam radius, boleh coba lagi)
+      return;
+    }
+    showToast(`Absen ${r.jenis} berhasil — ${r.jam} (${r.jarak} m dari hotel)`);
+    await refreshStatus(); // sumber kebenaran status tombol berikutnya berasal dari server, bukan asumsi klien
+  }catch(e){
+    showToast('Tidak dapat terhubung ke server.', true);
+    updateAbsenButton();
+  }
+}
+
+// Perbarui hitung-mundur gate 8 jam setiap menit tanpa perlu panggil server
+setInterval(() => { if(session) updateAbsenButton(); }, 60000);
+
+/* ====== PWA: install prompt & service worker ====== */
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBar').classList.add('show');
+});
+
+async function installApp(){
+  if(!deferredInstallPrompt) return;
+  $('installBar').classList.remove('show');
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+}
+
+window.addEventListener('appinstalled', () => {
+  $('installBar').classList.remove('show');
+});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+/* ====== INIT ====== */
+if(session){ enterAbsenScreen(); }
+
+// Enter-to-submit di form login
+$('inpPin').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+$('inpId').addEventListener('keydown', e => { if(e.key==='Enter') $('inpPin').focus(); });
+</script>
+</body>
+</html>
