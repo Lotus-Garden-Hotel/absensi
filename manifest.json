@@ -2,7 +2,6 @@
   "name": "Absensi OJT — Lotus Garden Hotel & Restaurant",
   "short_name": "Absensi OJT",
   "description": "Absensi QR untuk peserta OJT Lotus Garden Hotel & Restaurant, dengan validasi lokasi otomatis.",
-  "id": "/absensi-lotus-garden/",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

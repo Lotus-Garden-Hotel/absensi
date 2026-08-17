@@ -65,6 +65,7 @@
   .filters .field{ margin-bottom:0; }
   .filters .actions{ grid-column:1 / -1; display:flex; gap:10px; }
   .filters .actions .btn{ flex:1; }
+  .last-updated{ font-size:11px; color:var(--ink-soft); text-align:right; margin-top:2px; }
   .btn-outline{ background:#fff; color:var(--green); border:1.5px solid var(--green); }
   .btn-outline:hover{ background:var(--cream-deep); }
 
@@ -147,6 +148,7 @@
         <button class="btn" onclick="loadData()">Terapkan Filter</button>
         <button class="btn btn-outline" onclick="exportExcel()">⬇ Export Excel</button>
       </div>
+      <div class="last-updated" id="lastUpdated" style="grid-column:1 / -1;"></div>
     </div>
 
     <div class="cards">
@@ -188,11 +190,12 @@
 
 <script>
 /* ====== KONFIGURASI ====== */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvuKQr7WH7KgT_pDm2btFi2irMajpoacLKO199jPoHwTld9Nw/exec';
+const GAS_URL = 'GANTI_DENGAN_URL_WEB_APP_GAS_ANDA';
 
 const $ = (id) => document.getElementById(id);
 let adminToken = localStorage.getItem('absensi_admin_token') || null;
 let currentRows = [];
+let autoRefreshTimer = null;
 let chartKehadiranInst = null, chartJamKerjaInst = null;
 
 async function callApi(payload){
@@ -223,6 +226,7 @@ async function doAdminLogin(){
 }
 
 function doAdminLogout(){
+  if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   localStorage.removeItem('absensi_admin_token');
   adminToken = null;
   $('screenDash').style.display = 'none';
@@ -241,6 +245,10 @@ function enterDashboard(){
   $('fEnd').value = today.toISOString().slice(0,10);
 
   loadData();
+  // Auto-refresh tiap 45 detik selagi dashboard terbuka, supaya tidak perlu
+  // klik "Terapkan Filter" manual untuk lihat absen Pulang yang baru masuk.
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(loadData, 45000);
 }
 
 async function loadData(){
@@ -262,6 +270,7 @@ async function loadData(){
     renderDeptFilter(r.daftarDepartemen, departemen);
     renderSummary(r.summary);
     renderTable(r.rows);
+    $('lastUpdated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
 
     // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat, tabel & ringkasan
     // yg sudah berhasil dimuat TIDAK ikut hilang.
