@@ -221,6 +221,48 @@
         <input id="inpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
       </div>
       <button class="btn btn-gold" id="btnLogin" onclick="doLogin()">Masuk</button>
+      <button class="logout" onclick="bukaDaftar()">Belum punya akun? Daftar di sini</button>
+    </div>
+
+    <!-- ===== DAFTAR SCREEN ===== -->
+    <div id="screenDaftar" class="hidden">
+      <div class="err-msg" id="daftarErr"></div>
+
+      <div id="daftarForm">
+        <div class="field">
+          <label>Nama Lengkap</label>
+          <input id="dInpNama" type="text" autocomplete="off" placeholder="Nama sesuai identitas">
+        </div>
+        <div class="field">
+          <label>Asal Sekolah</label>
+          <input id="dInpAsalSekolah" type="text" autocomplete="off" placeholder="cth. SMK Contoh 1">
+        </div>
+        <div class="field">
+          <label>Departemen</label>
+          <select id="dInpDepartemen">
+            <option value="">Memuat daftar departemen…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Buat PIN (4-8 digit angka)</label>
+          <input id="dInpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <div class="field">
+          <label>Ulangi PIN</label>
+          <input id="dInpPinKonfirmasi" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <button class="btn btn-gold" id="btnDaftar" onclick="doDaftar()">Daftar</button>
+        <button class="logout" onclick="tutupDaftar()">Sudah punya akun? Kembali ke Masuk</button>
+      </div>
+
+      <div id="daftarSukses" class="hidden">
+        <div class="status-line ok" style="font-size:15px; margin-bottom:4px;">Pendaftaran berhasil! 🎉</div>
+        <div class="status-line" style="margin-bottom:18px;">
+          ID OJT Anda: <b id="daftarIdBaru" style="color:var(--ink); font-size:16px;">—</b><br>
+          Simpan ID ini untuk login berikutnya.
+        </div>
+        <button class="btn btn-gold" onclick="lanjutSetelahDaftar()">Lanjut ke Absen →</button>
+      </div>
     </div>
 
     <!-- ===== ABSEN SCREEN ===== -->
@@ -343,6 +385,94 @@ function doLogout(){
   $('screenAbsen').classList.add('hidden');
   $('screenLogin').classList.remove('hidden');
   $('inpPin').value = '';
+}
+
+/* ====== DAFTAR (SELF-REGISTRATION) ====== */
+let daftarInfoLoaded = false;
+
+async function bukaDaftar(){
+  $('screenLogin').classList.add('hidden');
+  $('screenDaftar').classList.remove('hidden');
+  $('daftarForm').classList.remove('hidden');
+  $('daftarSukses').classList.add('hidden');
+  $('daftarErr').style.display = 'none';
+
+  if(!daftarInfoLoaded){
+    try{
+      const r = await callApi({ action:'daftarInfo' });
+      const sel = $('dInpDepartemen');
+      if(r.success && r.daftarDepartemen && r.daftarDepartemen.length){
+        sel.innerHTML = '<option value="">Pilih departemen…</option>' +
+          r.daftarDepartemen.map(d => `<option value="${d}">${d}</option>`).join('');
+        daftarInfoLoaded = true;
+      }else{
+        sel.innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+      }
+    }catch(e){
+      $('dInpDepartemen').innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+    }
+  }
+}
+
+function tutupDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  $('screenLogin').classList.remove('hidden');
+}
+
+async function doDaftar(){
+  const nama = $('dInpNama').value.trim();
+  const asalSekolah = $('dInpAsalSekolah').value.trim();
+  const departemen = $('dInpDepartemen').value;
+  const pin = $('dInpPin').value.trim();
+  const pinKonfirmasi = $('dInpPinKonfirmasi').value.trim();
+  const err = $('daftarErr');
+  err.style.display = 'none';
+
+  if(!nama || !asalSekolah || !departemen || !pin){
+    err.textContent = 'Semua field wajib diisi.';
+    err.style.display = 'block';
+    return;
+  }
+  if(!/^\d{4,8}$/.test(pin)){
+    err.textContent = 'PIN harus angka, 4-8 digit.';
+    err.style.display = 'block';
+    return;
+  }
+  if(pin !== pinKonfirmasi){
+    err.textContent = 'PIN dan Ulangi PIN tidak sama.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnDaftar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Mendaftarkan…';
+
+  try{
+    const r = await callApi({ action:'daftar', nama, asalSekolah, departemen, pin });
+    if(!r.success){
+      err.textContent = r.message || 'Pendaftaran gagal.';
+      err.style.display = 'block';
+      return;
+    }
+    session = { id: r.id, nama: r.nama, departemen: r.departemen, token: r.token };
+    localStorage.setItem('absensi_session', JSON.stringify(session));
+
+    $('daftarIdBaru').textContent = r.id;
+    $('daftarForm').classList.add('hidden');
+    $('daftarSukses').classList.remove('hidden');
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server. Cek koneksi internet.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Daftar';
+  }
+}
+
+function lanjutSetelahDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  enterAbsenScreen();
 }
 
 /* ====== ABSEN SCREEN ====== */
