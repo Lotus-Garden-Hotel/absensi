@@ -537,18 +537,48 @@ function enterAbsenScreen(){
   startGeolocation();
 }
 
+function statusCacheKey(){
+  return `absensi_status_${session.id}_${tanggalHariIniStr()}`;
+}
+
+function tanggalHariIniStr(){
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+}
+
 async function refreshStatus(){
+  const cacheKey = statusCacheKey();
+
+  // Tampilkan cache hari ini dulu (kalau ada) SEBELUM nunggu network — biar instan,
+  // sama seperti pola di Riwayat Bulanan. Kalau online, akan langsung ditimpa data
+  // segar begitu server merespons.
+  let cached = null;
+  try{
+    const raw = localStorage.getItem(cacheKey);
+    if(raw) cached = JSON.parse(raw);
+  }catch(e){ cached = null; }
+  if(cached) updateChips(cached, true);
+
   try{
     const r = await callApi({ action:'status', id: session.id, token: session.token });
     if(!r.success){
       if(r.forceLogout) doLogout();
       return;
     }
-    updateChips(r);
-  }catch(e){ /* diamkan, tidak kritikal utk UX awal */ }
+    localStorage.setItem(cacheKey, JSON.stringify(r));
+    updateChips(r, false);
+  }catch(e){
+    // Offline / gagal connect ke server. Kalau belum sempat render dari cache di atas
+    // (mis. baru pertama kali buka & langsung offline), coba render sekali lagi di sini.
+    if(cached){
+      showToast('Offline — menampilkan status Masuk/Pulang tersimpan terakhir.', true);
+    }else{
+      showToast('Offline & belum ada status tersimpan. Sambungkan internet dulu.', true);
+    }
+  }
 }
 
-function updateChips(r){
+function updateChips(r, dariCache){
   if(r.departemen) $('txtDepartemen').textContent = r.departemen;
   const chipM = $('chipMasuk'), chipP = $('chipPulang');
   chipM.classList.toggle('done', !!r.sudahMasuk);
