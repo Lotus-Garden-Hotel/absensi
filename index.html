@@ -1,768 +1,798 @@
-/**
- * ============================================================
- *  ABSENSI ONLINE (QR) — Lotus Garden Hotel & Restaurant
- *  Backend: Google Apps Script + Google Sheets
- * ============================================================
- *
- *  SETUP (jalankan sekali):
- *  1. Buat Google Spreadsheet BARU (kosong).
- *  2. Copy Spreadsheet ID dari URL-nya, paste ke SPREADSHEET_ID di bawah.
- *  3. Di spreadsheet: Extensions > Apps Script, hapus isi default,
- *     paste seluruh file ini.
- *  4. Pilih fungsi "setupSheets" di dropdown, klik Run (▶) sekali.
- *     -> Ini otomatis membuat sheet db_OJT & db_ABSENSI + header.
- *  5. Isi sheet db_OJT dengan data peserta OJT asli
- *     (hapus baris contoh "OJT001").
- *  6. Deploy > New deployment > pilih tipe "Web app".
- *     - Execute as: Me
- *     - Who has access: Anyone
- *     Klik Deploy, copy "Web app URL".
- *  7. Paste Web App URL itu ke variabel GAS_URL di index.html DAN admin.html (dua-duanya!).
- *
- *  ⚠️ PENTING — setiap kali Anda EDIT file ini, wajib update deployment:
- *     Deploy > Manage deployments > klik ikon pensil (Edit) pada deployment
- *     yang sudah ada > Version: pilih "New version" > Deploy.
- *     JANGAN pilih "New deployment" (itu bikin URL BARU, sehingga index.html/
- *     admin.html yang masih pakai URL lama akan tetap menjalankan kode LAMA).
- *
- *  Cara cek versi yang sedang live: buka GAS_URL langsung di tab browser baru
- *  (bukan lewat index.html/admin.html). Harus muncul JSON berisi "version"
- *  yang cocok dengan CODE_VERSION di bawah ini.
- * ============================================================
- */
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Absensi OJT — Lotus Garden Hotel & Restaurant</title>
 
-const CODE_VERSION = 'v14-revert-gate-filter-sekolah-riwayat';
+<!-- PWA: agar bisa "Add to Home screen" / install sebagai app di Chrome Android -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#21362B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Absensi OJT">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 
-const SPREADSHEET_ID = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvuKQr7WH7KgT_pDm2btFi2irMajpoacLKO199jPoHwTld9Nw/exec';
-const SHEET_OJT      = 'db_OJT';
-const SHEET_ABSENSI  = 'db_ABSENSI';
-
-// Titik pusat Lotus Garden Hotel, Jl. Jaksa Agung Suprapto No.26, Kediri
-const HOTEL_LAT    = -7.806625;
-const HOTEL_LNG    = 112.0047489;
-const RADIUS_METER = 50; // radius area absen yang diizinkan
-
-// Dashboard Admin/HRD
-const ADMIN_PASSWORD = 'GANTI_PASSWORD_ADMIN'; // password bersama HRD/admin — WAJIB diganti
-const MIN_JAM_KERJA  = 8;                      // jarak minimal (jam) antara Absen Masuk & Absen Pulang — default (Senin-Jumat, semua departemen)
-
-// Pengecualian gate hari Sabtu — khusus departemen berikut, jarak minimal Masuk->Pulang
-// jadi lebih pendek (mis. Office masuk 08:00 pulang 14:00 = 6 jam, bukan 8 jam).
-// Nama di array ini HARUS PERSIS SAMA dengan isi kolom Departemen di db_OJT
-// (tidak case-sensitive & spasi di awal/akhir diabaikan, tapi ejaan harus cocok).
-const MIN_JAM_KERJA_SABTU = 6;
-const DEPARTEMEN_SABTU_PENDEK = ['TKJ IT', 'Sales', 'Back Office'];
-
-// Pendaftaran mandiri (self-registration) — daftar Departemen default yang muncul
-// di dropdown form Daftar. Digabung otomatis dengan departemen yang sudah ada di
-// db_OJT (jadi kalau HRD sudah pernah isi departemen baru manual, otomatis ikut muncul).
-const DEPARTEMEN_OPSI_DEFAULT = [
-  'Front Office', 'Housekeeping', 'F&B Service', 'F&B Product / Kitchen',
-  'Engineering', 'HRD', 'Sales', 'Accounting', 'Back Office', 'TKJ IT'
-];
-const PREFIX_ID_OJT = 'OJT'; // prefix ID otomatis, mis. OJT001, OJT002, ...
-
-// ------------------------------------------------------------
-// SETUP — jalankan manual sekali dari editor Apps Script
-// ------------------------------------------------------------
-function setupSheets() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-
-  let shOjt = ss.getSheetByName(SHEET_OJT);
-  if (!shOjt) shOjt = ss.insertSheet(SHEET_OJT);
-  if (shOjt.getLastRow() === 0) {
-    shOjt.appendRow(['ID_OJT', 'Nama', 'PIN', 'Departemen', 'Asal_Sekolah', 'Status']);
-    shOjt.appendRow(['OJT001', 'Contoh Nama (hapus baris ini)', '1234', 'Front Office', 'SMK Contoh 1', 'Aktif']);
-    shOjt.setFrozenRows(1);
-    shOjt.autoResizeColumns(1, 6);
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFFCF0;
+    --cream-deep:#F5EFDA;
+    --ink:#2B2417;
+    --ink-soft:#6b6252;
+    --gold:#C9A84C;
+    --gold-deep:#a8863a;
+    --green:#21362B;
+    --ok:#3F7052;
+    --ok-bg:#e7f0e8;
+    --warn:#B5483D;
+    --warn-bg:#fbeae7;
+    --radius-card:18px;
   }
-  // ID_OJT & PIN sbg teks murni, supaya "001" tidak berubah jadi 1
-  applyTextFormat_(shOjt, 1);
-  applyTextFormat_(shOjt, 3);
-
-  let shAbs = ss.getSheetByName(SHEET_ABSENSI);
-  if (!shAbs) shAbs = ss.insertSheet(SHEET_ABSENSI);
-  if (shAbs.getLastRow() === 0) {
-    shAbs.appendRow([
-      'Timestamp', 'Tanggal', 'ID_OJT', 'Nama', 'Departemen', 'Asal_Sekolah',
-      'Jenis', 'Jam', 'Lat', 'Lng', 'Jarak_meter', 'Status_Lokasi'
-    ]);
-    shAbs.setFrozenRows(1);
-    shAbs.autoResizeColumns(1, 12);
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    min-height:100dvh;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(circle at 20% -10%, rgba(201,168,76,0.18), transparent 45%),
+      radial-gradient(circle at 100% 110%, rgba(33,54,43,0.10), transparent 50%),
+      var(--cream);
+    font-family:'Jost', sans-serif;
+    color:var(--ink);
+    padding:20px;
   }
-  // Tanggal & Jam sbg teks murni, supaya Sheets TIDAK auto-convert jadi tipe Date/Time
-  // (ini penyebab data jam/tanggal "hilang" saat dibaca ulang oleh script)
-  applyTextFormat_(shAbs, 2); // Tanggal
-  applyTextFormat_(shAbs, 8); // Jam
-  applyTextFormat_(shAbs, 3); // ID_OJT
+  .card{
+    width:100%; max-width:400px;
+    background:#fff;
+    border-radius:var(--radius-card);
+    box-shadow:0 18px 40px -18px rgba(43,36,23,0.35);
+    overflow:hidden;
+    border:1px solid rgba(201,168,76,0.25);
+  }
+  .brandbar{
+    background:linear-gradient(135deg, var(--green), #16241c);
+    color:var(--cream);
+    padding:22px 24px 18px;
+    text-align:center;
+    position:relative;
+  }
+  .brandbar::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:-1px; height:6px;
+    background:linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .logo-img{
+    width:56px; height:56px; margin:0 auto 8px;
+    display:block; object-fit:contain;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));
+  }
+  .brandbar h1{
+    font-family:'Cormorant Garamond', serif;
+    font-weight:600; font-size:22px; margin:0; letter-spacing:.5px;
+  }
+  .brandbar p{
+    margin:4px 0 0; font-size:11px; letter-spacing:2.5px;
+    text-transform:uppercase; color:var(--gold); font-weight:500;
+  }
+  .body-pad{ padding:26px 24px 28px; }
 
-  const def = ss.getSheetByName('Sheet1');
-  if (def && ss.getSheets().length > 2) ss.deleteSheet(def);
-
-  Logger.log('Setup selesai. Sheet db_OJT dan db_ABSENSI siap dipakai.');
-}
-
-// Set format kolom jadi Plain Text ('@') agar Google Sheets tidak otomatis
-// mengubah string jam/tanggal/ID menjadi tipe Date/Number.
-function applyTextFormat_(sheet, col) {
-  sheet.getRange(1, col, Math.max(sheet.getMaxRows(), 2000), 1).setNumberFormat('@');
-}
-
-// ------------------------------------------------------------
-// MIGRASI SATU KALI — jalankan manual jika data jam/tanggal lama
-// sudah kadung tersimpan sbg tipe Date (bukan teks) akibat bug sebelumnya.
-// Aman dijalankan berkali-kali.
-// ------------------------------------------------------------
-function fixSheetFormats() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const tz = Session.getScriptTimeZone();
-  const shAbs = ss.getSheetByName(SHEET_ABSENSI);
-  const shOjt = ss.getSheetByName(SHEET_OJT);
-  const lastRow = shAbs.getLastRow();
-
-  // Tulis ulang header row — label lama (sebelum kolom Asal_Sekolah ditambahkan)
-  // tidak pernah ikut ter-update karena setupSheets hanya menulis header saat
-  // sheet kosong. Menimpa teks header ini AMAN, tidak menyentuh baris data.
-  shAbs.getRange(1, 1, 1, 12).setValues([[
-    'Timestamp', 'Tanggal', 'ID_OJT', 'Nama', 'Departemen', 'Asal_Sekolah',
-    'Jenis', 'Jam', 'Lat', 'Lng', 'Jarak_meter', 'Status_Lokasi'
-  ]]);
-  shOjt.getRange(1, 1, 1, 6).setValues([[
-    'ID_OJT', 'Nama', 'PIN', 'Departemen', 'Asal_Sekolah', 'Status'
-  ]]);
-
-  if (lastRow > 1) {
-    const tglRange = shAbs.getRange(2, 2, lastRow - 1, 1); // Tanggal
-    const jamRange = shAbs.getRange(2, 8, lastRow - 1, 1); // Jam
-    const tglVals = tglRange.getValues();
-    const jamVals = jamRange.getValues();
-
-    for (let i = 0; i < tglVals.length; i++) {
-      if (tglVals[i][0] instanceof Date) {
-        tglVals[i][0] = Utilities.formatDate(tglVals[i][0], tz, 'yyyy-MM-dd');
-      }
-      if (jamVals[i][0] instanceof Date) {
-        jamVals[i][0] = Utilities.formatDate(jamVals[i][0], tz, 'HH:mm:ss');
-      }
-      // Perbaiki jam yang kehilangan nol di depan, mis. "7:40:55" -> "07:40:55"
-      // (data lama sebelum kolom dikunci Plain Text bisa punya bentuk ini,
-      // dan ini menyebabkan bug perbandingan waktu secara teks).
-      if (typeof jamVals[i][0] === 'string' && /^\d:\d{2}:\d{2}$/.test(jamVals[i][0])) {
-        jamVals[i][0] = '0' + jamVals[i][0];
-      }
-    }
-    tglRange.setNumberFormat('@').setValues(tglVals);
-    jamRange.setNumberFormat('@').setValues(jamVals);
+  /* ---------- LOGIN ---------- */
+  .field{ margin-bottom:16px; }
+  .field label{
+    display:block; font-size:11.5px; letter-spacing:1.2px; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:6px; font-weight:500;
+  }
+  .field input{
+    width:100%; padding:13px 14px; border-radius:10px;
+    border:1.5px solid #e6dfc9; background:var(--cream);
+    font-family:'Jost',sans-serif; font-size:16px; color:var(--ink);
+    outline:none; transition:border-color .15s;
+  }
+  .field input:focus{ border-color:var(--gold); }
+  .btn{
+    width:100%; padding:14px; border:none; border-radius:10px;
+    font-family:'Jost',sans-serif; font-weight:600; font-size:14.5px;
+    letter-spacing:.5px; cursor:pointer; transition:transform .12s, box-shadow .12s, opacity .12s;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn-gold{ background:var(--gold); color:#fff; box-shadow:0 8px 18px -8px rgba(201,168,76,0.7); }
+  .btn-gold:hover{ background:var(--gold-deep); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; box-shadow:none; }
+  .err-msg{
+    background:var(--warn-bg); color:var(--warn); font-size:13px;
+    padding:10px 12px; border-radius:8px; margin-bottom:14px; display:none;
   }
 
-  applyTextFormat_(shAbs, 2);
-  applyTextFormat_(shAbs, 8);
-  applyTextFormat_(shAbs, 3);
-  applyTextFormat_(ss.getSheetByName(SHEET_OJT), 1);
-  applyTextFormat_(ss.getSheetByName(SHEET_OJT), 3);
+  /* ---------- ABSEN SCREEN ---------- */
+  .greet{ text-align:center; margin-bottom:6px; }
+  .greet .hi{ font-size:11.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-soft); }
+  .greet .nama{ font-family:'Cormorant Garamond', serif; font-size:26px; font-weight:700; margin:2px 0 0; }
+  .greet .jab{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
 
-  Logger.log('Format tanggal/jam pada data lama sudah diperbaiki.');
-}
-
-// ------------------------------------------------------------
-// MIGRASI SATU KALI — bersihkan baris kosong di tengah data.
-// Penyebab: menghapus isi sel manual (tombol Delete) TIDAK sama dengan
-// menghapus barisnya (klik kanan > Delete row). Baris yang isinya dihapus
-// tapi formatnya masih menempel tetap dianggap "terpakai" oleh Apps Script,
-// sehingga appendRow() jadi melompati baris kosong itu dan menulis jauh di
-// bawahnya. Jalankan fungsi ini SEKALI untuk merapikan; aman diulang kapan saja.
-// ------------------------------------------------------------
-function bersihkanBarisKosong() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-
-  [
-    { nama: SHEET_ABSENSI, kolomId: 3 }, // ID_OJT di db_ABSENSI = kolom C
-    { nama: SHEET_OJT,     kolomId: 1 }  // ID_OJT di db_OJT     = kolom A
-  ].forEach(function (info) {
-    const sh = ss.getSheetByName(info.nama);
-    const lastRow = sh.getLastRow();
-    if (lastRow < 2) return;
-
-    const idValues = sh.getRange(2, info.kolomId, lastRow - 1, 1).getValues();
-    let dihapus = 0;
-
-    // Hapus dari BAWAH ke ATAS supaya nomor baris tidak bergeser saat proses berjalan
-    for (let i = idValues.length - 1; i >= 0; i--) {
-      if (String(idValues[i][0]).trim() === '') {
-        sh.deleteRow(i + 2);
-        dihapus++;
-      }
-    }
-    Logger.log(info.nama + ': ' + dihapus + ' baris kosong dihapus.');
-  });
-
-  SpreadsheetApp.flush();
-  Logger.log('Selesai. appendRow() sekarang akan menulis rapat lagi tanpa lompat baris.');
-}
-
-// ------------------------------------------------------------
-// ROUTER
-// ------------------------------------------------------------
-function doGet(e) {
-  return respond({ success: true, message: 'Absensi Lotus Garden — API aktif.', version: CODE_VERSION });
-}
-
-function doPost(e) {
-  try {
-    const body = JSON.parse(e.postData.contents);
-    const action = body.action;
-
-    if (action === 'login')  return respond(handleLogin(body.id, body.pin));
-    if (action === 'status') return respond(handleStatus(body.id, body.token));
-    if (action === 'absen')  return respond(handleAbsen(body.id, body.token, body.lat, body.lng));
-    if (action === 'riwayatBulanan') return respond(handleRiwayatBulanan(body.id, body.token, body.bulan));
-
-    if (action === 'daftarInfo') return respond(handleDaftarInfo());
-    if (action === 'daftar')     return respond(handleDaftar(body.nama, body.asalSekolah, body.departemen, body.pin));
-
-    if (action === 'adminLogin')   return respond(handleAdminLogin(body.password));
-    if (action === 'adminGetData') return respond(handleAdminGetData(body.token, body.startDate, body.endDate, body.departemen, body.asalSekolah));
-
-    return respond({ success: false, message: 'Aksi tidak dikenal.' });
-  } catch (err) {
-    return respond({ success: false, message: 'Error server: ' + err.message });
+  .gauge-wrap{
+    position:relative; width:184px; height:184px; margin:20px auto 8px;
   }
-}
-
-function respond(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// ------------------------------------------------------------
-// HELPERS
-// ------------------------------------------------------------
-function findPeserta(id) {
-  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_OJT);
-  const data = sh.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim() === String(id).trim()) {
-      return {
-        row: i + 1, id: data[i][0], nama: data[i][1], pin: String(data[i][2]).trim(),
-        departemen: data[i][3], asalSekolah: data[i][4], status: data[i][5]
-      };
-    }
+  .gauge-ring{
+    width:100%; height:100%; border-radius:50%;
+    background: conic-gradient(var(--ok) calc(var(--pct,0)*1%), #ece5d0 0);
+    display:flex; align-items:center; justify-content:center;
+    transition: background .4s ease;
   }
-  return null;
+  .gauge-inner{
+    width:150px; height:150px; border-radius:50%;
+    background:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow: inset 0 0 0 1px rgba(43,36,23,0.06);
+  }
+  .gauge-inner .m{ font-family:'Cormorant Garamond', serif; font-size:34px; font-weight:700; line-height:1; }
+  .gauge-inner .m span{ font-size:14px; font-family:'Jost',sans-serif; font-weight:500; color:var(--ink-soft); }
+  .gauge-inner .lbl{ font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-soft); margin-top:5px; }
+  .gauge-dot{
+    position:absolute; top:6px; left:50%; width:10px; height:10px; margin-left:-5px;
+    border-radius:50%; background:var(--gold);
+    box-shadow:0 0 0 4px rgba(201,168,76,0.25);
+    animation:pulse 1.8s infinite;
+  }
+  @keyframes pulse{ 0%,100%{transform:scale(1);} 50%{transform:scale(1.25);} }
+
+  .status-line{
+    text-align:center; font-size:13px; margin:10px 0 18px; min-height:18px;
+    color:var(--ink-soft);
+  }
+  .status-line.ok{ color:var(--ok); font-weight:500; }
+  .status-line.bad{ color:var(--warn); font-weight:500; }
+
+  .chips{
+    display:flex; gap:10px; margin-bottom:18px;
+  }
+  .chip{
+    flex:1; border-radius:10px; padding:10px 8px; text-align:center;
+    background:var(--cream); border:1px solid #eee3c4;
+  }
+  .chip.done{ background:var(--ok-bg); border-color:#cfe3d3; }
+  .chip .k{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-soft); }
+  .chip .v{ font-family:'Cormorant Garamond', serif; font-weight:700; font-size:17px; margin-top:2px; }
+
+  /* ---------- RIWAYAT BULANAN ---------- */
+  .riwayat-header{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;
+  }
+  .riwayat-nav{
+    width:36px; height:36px; border-radius:50%; border:1px solid #e6dfc9; background:var(--cream);
+    font-size:18px; color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .riwayat-bulan{
+    font-family:'Cormorant Garamond', serif; font-weight:700; font-size:18px; letter-spacing:.5px;
+  }
+  .ringkasan-box{
+    background:var(--cream); border-radius:12px; padding:14px 16px; margin-bottom:18px;
+    border:1px solid #eee3c4;
+  }
+  .ringkasan-row{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:13px; padding:5px 0; color:var(--ink-soft);
+  }
+  .ringkasan-row b{ color:var(--ink); font-family:'Cormorant Garamond', serif; font-size:15px; font-weight:700; }
+  .detail-list{ margin-bottom:18px; max-height:340px; overflow-y:auto; }
+  .detail-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:9px 4px; border-bottom:1px solid #f2ede0; font-size:12.5px;
+  }
+  .detail-row .tgl{ font-weight:600; width:70px; flex-shrink:0; }
+  .detail-row .jam{ color:var(--ink-soft); flex:1; text-align:center; }
+  .detail-row .tot{ font-weight:600; color:var(--ok); width:64px; text-align:right; flex-shrink:0; }
+  .riwayat-empty{ font-size:12.5px; color:var(--ink-soft); text-align:center; padding:24px 0; }
+
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translate(-50%, 20px);
+    background:var(--green); color:#fff; padding:13px 20px; border-radius:10px;
+    font-size:14px; opacity:0; pointer-events:none; transition:all .3s ease;
+    box-shadow:0 12px 24px -8px rgba(0,0,0,0.4); max-width:88vw; text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%, 0); }
+  .toast.bad{ background:#5c2620; }
+
+  .logout{
+    display:block; text-align:center; margin-top:6px; font-size:12px;
+    color:var(--ink-soft); text-decoration:underline; cursor:pointer; background:none; border:none;
+    width:100%; font-family:'Jost',sans-serif;
+  }
+  .install-bar{
+    display:none; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--cream-deep); border:1px solid #eadfb8; border-radius:10px;
+    padding:10px 12px; margin-bottom:16px; font-size:12.5px;
+  }
+  .install-bar.show{ display:flex; }
+  .install-bar span{ color:var(--ink-soft); line-height:1.35; }
+  .install-bar button{
+    flex-shrink:0; border:none; background:var(--gold); color:#fff; font-weight:600;
+    font-family:'Jost',sans-serif; font-size:12.5px; padding:8px 14px; border-radius:8px; cursor:pointer;
+  }
+  .hidden{ display:none !important; }
+  .spin{
+    width:16px; height:16px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.5); border-top-color:#fff;
+    display:inline-block; vertical-align:-3px; margin-right:6px;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brandbar">
+    <img class="logo-img" src="logo.png" alt="Lotus Garden Hotel & Restaurant">
+    <h1>Lotus Garden Hotel &amp; Restaurant</h1>
+    <p>Absensi Peserta OJT</p>
+  </div>
+
+  <div class="body-pad">
+
+    <div class="install-bar" id="installBar">
+      <span>Install aplikasi ini di HP Anda untuk akses lebih cepat.</span>
+      <button onclick="installApp()">Install</button>
+    </div>
+
+    <!-- ===== LOGIN SCREEN ===== -->
+    <div id="screenLogin">
+      <div class="err-msg" id="loginErr"></div>
+      <div class="field">
+        <label>ID OJT</label>
+        <input id="inpId" type="text" inputmode="text" autocomplete="off" placeholder="cth. OJT001">
+      </div>
+      <div class="field">
+        <label>PIN</label>
+        <input id="inpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+      </div>
+      <button class="btn btn-gold" id="btnLogin" onclick="doLogin()">Masuk</button>
+      <button class="logout" onclick="bukaDaftar()">Belum punya akun? Daftar di sini</button>
+    </div>
+
+    <!-- ===== DAFTAR SCREEN ===== -->
+    <div id="screenDaftar" class="hidden">
+      <div class="err-msg" id="daftarErr"></div>
+
+      <div id="daftarForm">
+        <div class="field">
+          <label>Nama Lengkap</label>
+          <input id="dInpNama" type="text" autocomplete="off" placeholder="Nama sesuai identitas">
+        </div>
+        <div class="field">
+          <label>Asal Sekolah</label>
+          <input id="dInpAsalSekolah" type="text" autocomplete="off" placeholder="cth. SMK Contoh 1">
+        </div>
+        <div class="field">
+          <label>Departemen</label>
+          <select id="dInpDepartemen">
+            <option value="">Memuat daftar departemen…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Buat PIN (4-8 digit angka)</label>
+          <input id="dInpPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <div class="field">
+          <label>Ulangi PIN</label>
+          <input id="dInpPinKonfirmasi" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <button class="btn btn-gold" id="btnDaftar" onclick="doDaftar()">Daftar</button>
+        <button class="logout" onclick="tutupDaftar()">Sudah punya akun? Kembali ke Masuk</button>
+      </div>
+
+      <div id="daftarSukses" class="hidden">
+        <div class="status-line ok" style="font-size:15px; margin-bottom:4px;">Pendaftaran berhasil! 🎉</div>
+        <div class="status-line" style="margin-bottom:18px;">
+          ID OJT Anda: <b id="daftarIdBaru" style="color:var(--ink); font-size:16px;">—</b><br>
+          Simpan ID ini untuk login berikutnya.
+        </div>
+        <button class="btn btn-gold" onclick="lanjutSetelahDaftar()">Lanjut ke Absen →</button>
+      </div>
+    </div>
+
+    <!-- ===== ABSEN SCREEN ===== -->
+    <div id="screenAbsen" class="hidden">
+      <div class="greet">
+        <div class="hi">Selamat datang</div>
+        <div class="nama" id="txtNama">—</div>
+        <div class="jab" id="txtDepartemen">—</div>
+      </div>
+
+      <div class="gauge-wrap">
+        <div class="gauge-dot" id="gaugeDot"></div>
+        <div class="gauge-ring" id="gaugeRing" style="--pct:0;">
+          <div class="gauge-inner">
+            <div class="m" id="gaugeMeter">—<span> m</span></div>
+            <div class="lbl">Jarak ke hotel</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-line" id="gpsStatus">Mengambil lokasi GPS…</div>
+
+      <div class="chips">
+        <div class="chip" id="chipMasuk">
+          <div class="k">Masuk</div>
+          <div class="v">--:--</div>
+        </div>
+        <div class="chip" id="chipPulang">
+          <div class="k">Pulang</div>
+          <div class="v">--:--</div>
+        </div>
+      </div>
+
+      <button class="btn btn-gold" id="btnAbsen" onclick="doAbsen()" disabled>Menunggu lokasi…</button>
+      <button class="logout" onclick="bukaRiwayat()">📅 Riwayat Absensi Saya</button>
+      <button class="logout" onclick="doLogout()">Keluar dari sesi ini</button>
+    </div>
+
+    <!-- ===== RIWAYAT BULANAN SCREEN ===== -->
+    <div id="screenRiwayat" class="hidden">
+      <div class="riwayat-header">
+        <button class="riwayat-nav" onclick="gantiBulan(-1)">‹</button>
+        <div class="riwayat-bulan" id="txtBulanRiwayat">—</div>
+        <button class="riwayat-nav" onclick="gantiBulan(1)">›</button>
+      </div>
+
+      <div class="ringkasan-box">
+        <div class="ringkasan-row"><span>Hari Hadir</span><b id="rHariHadir">—</b></div>
+        <div class="ringkasan-row"><span>Total Jam Kerja</span><b id="rTotalJam">—</b></div>
+        <div class="ringkasan-row"><span>Rata-rata / Hari</span><b id="rRataJam">—</b></div>
+      </div>
+
+      <div class="detail-list" id="detailRiwayatList">
+        <div class="riwayat-empty">Memuat riwayat…</div>
+      </div>
+
+      <button class="logout" onclick="tutupRiwayat()">← Kembali ke Absen</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ====== KONFIGURASI ====== */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzic3Q5FPbOZskgph0ZrWvuKQr7WH7KgT_pDm2btFi2irMajpoacLKO199jPoHwTld9Nw/exec';
+const HOTEL_LAT = -7.806625;
+const HOTEL_LNG = 112.0047489;
+const RADIUS_METER = 100;
+const MIN_JAM_KERJA_DEFAULT = 8; // fallback jika status belum sempat dimuat; nilai asli datang dari server (beda2 sesuai hari & departemen)
+
+/* ====== STATE ====== */
+let session = JSON.parse(localStorage.getItem('absensi_session') || 'null');
+let lastCoords = null;
+let watchId = null;
+
+const $ = (id) => document.getElementById(id);
+
+function showToast(msg, bad){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=> t.className = 'toast', 3200);
 }
 
-// Token sederhana untuk sesi login yang tersimpan di HP (bukan enkripsi kuat,
-// cukup untuk validasi sesi internal — konsisten dgn sistem GAS lain yg dipakai).
-function makeToken(id, pin) {
-  return Utilities.base64EncodeWebSafe(id + ':' + pin);
+async function callApi(payload){
+  const res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify(payload) });
+  return res.json();
 }
 
-function distanceMeters(lat1, lng1, lat2, lng2) {
+/* ====== HAVERSINE (perkiraan di sisi klien, validasi asli tetap di server) ====== */
+function distanceMeters(lat1, lng1, lat2, lng2){
   const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Konversi string jam ("H:mm:ss" ATAU "HH:mm:ss") menjadi total detik sejak 00:00.
-// Numerik, jadi TIDAK rentan terhadap bug perbandingan teks (mis. "7:40:55" > "08:10:00"
-// secara alfabet padahal 7 pagi lebih awal dari jam 8 lewat 10).
-function jamKeDetik_(jamStr) {
-  const parts = String(jamStr).split(':').map(Number);
-  return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
-}
+/* ====== LOGIN ====== */
+async function doLogin(){
+  const id = $('inpId').value.trim();
+  const pin = $('inpPin').value.trim();
+  const err = $('loginErr');
+  err.style.display = 'none';
 
-// Normalisasi nilai sel Jam/Tanggal jadi string yang konsisten, APAPUN tipe aslinya.
-// Kalau suatu saat sel kembali auto-convert jadi tipe Date/Time (mis. krn format
-// kolom kereset akibat copy-paste manual), pembacaan tetap benar — self-healing,
-// tidak ikut merusak perhitungan gate/jam kerja. Ini lapisan pertahanan kedua,
-// di atas pemaksaan format Plain Text yang sudah dilakukan saat menulis baris baru.
-function normalizeJam_(v) {
-  if (v instanceof Date) {
-    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm:ss');
+  if(!id || !pin){
+    err.textContent = 'ID dan PIN wajib diisi.';
+    err.style.display = 'block';
+    return;
   }
+
+  const btn = $('btnLogin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Memeriksa…';
+
+  try{
+    const r = await callApi({ action:'login', id, pin });
+    if(!r.success){
+      err.textContent = r.message || 'Login gagal.';
+      err.style.display = 'block';
+      return;
+    }
+    session = { id: r.id, nama: r.nama, departemen: r.departemen, token: r.token };
+    localStorage.setItem('absensi_session', JSON.stringify(session));
+    enterAbsenScreen();
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server. Cek koneksi internet.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Masuk';
+  }
+}
+
+function doLogout(){
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  localStorage.removeItem('absensi_session');
+  session = null;
+  $('screenAbsen').classList.add('hidden');
+  $('screenLogin').classList.remove('hidden');
+  $('inpPin').value = '';
+}
+
+/* ====== DAFTAR (SELF-REGISTRATION) ====== */
+let daftarInfoLoaded = false;
+
+async function bukaDaftar(){
+  $('screenLogin').classList.add('hidden');
+  $('screenDaftar').classList.remove('hidden');
+  $('daftarForm').classList.remove('hidden');
+  $('daftarSukses').classList.add('hidden');
+  $('daftarErr').style.display = 'none';
+
+  if(!daftarInfoLoaded){
+    try{
+      const r = await callApi({ action:'daftarInfo' });
+      const sel = $('dInpDepartemen');
+      if(r.success && r.daftarDepartemen && r.daftarDepartemen.length){
+        sel.innerHTML = '<option value="">Pilih departemen…</option>' +
+          r.daftarDepartemen.map(d => `<option value="${d}">${d}</option>`).join('');
+        daftarInfoLoaded = true;
+      }else{
+        sel.innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+      }
+    }catch(e){
+      $('dInpDepartemen').innerHTML = '<option value="">Gagal memuat, coba lagi</option>';
+    }
+  }
+}
+
+function tutupDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  $('screenLogin').classList.remove('hidden');
+}
+
+async function doDaftar(){
+  const nama = $('dInpNama').value.trim();
+  const asalSekolah = $('dInpAsalSekolah').value.trim();
+  const departemen = $('dInpDepartemen').value;
+  const pin = $('dInpPin').value.trim();
+  const pinKonfirmasi = $('dInpPinKonfirmasi').value.trim();
+  const err = $('daftarErr');
+  err.style.display = 'none';
+
+  if(!nama || !asalSekolah || !departemen || !pin){
+    err.textContent = 'Semua field wajib diisi.';
+    err.style.display = 'block';
+    return;
+  }
+  if(!/^\d{4,8}$/.test(pin)){
+    err.textContent = 'PIN harus angka, 4-8 digit.';
+    err.style.display = 'block';
+    return;
+  }
+  if(pin !== pinKonfirmasi){
+    err.textContent = 'PIN dan Ulangi PIN tidak sama.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnDaftar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Mendaftarkan…';
+
+  try{
+    const r = await callApi({ action:'daftar', nama, asalSekolah, departemen, pin });
+    if(!r.success){
+      err.textContent = r.message || 'Pendaftaran gagal.';
+      err.style.display = 'block';
+      return;
+    }
+    session = { id: r.id, nama: r.nama, departemen: r.departemen, token: r.token };
+    localStorage.setItem('absensi_session', JSON.stringify(session));
+
+    $('daftarIdBaru').textContent = r.id;
+    $('daftarForm').classList.add('hidden');
+    $('daftarSukses').classList.remove('hidden');
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server. Cek koneksi internet.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Daftar';
+  }
+}
+
+function lanjutSetelahDaftar(){
+  $('screenDaftar').classList.add('hidden');
+  enterAbsenScreen();
+}
+
+/* ====== ABSEN SCREEN ====== */
+function enterAbsenScreen(){
+  $('screenLogin').classList.add('hidden');
+  $('screenAbsen').classList.remove('hidden');
+  $('txtNama').textContent = session.nama;
+  $('txtDepartemen').textContent = session.departemen || '';
+  refreshStatus();
+  startGeolocation();
+}
+
+async function refreshStatus(){
+  try{
+    const r = await callApi({ action:'status', id: session.id, token: session.token });
+    if(!r.success){
+      if(r.forceLogout) doLogout();
+      return;
+    }
+    updateChips(r);
+  }catch(e){ /* diamkan, tidak kritikal utk UX awal */ }
+}
+
+function updateChips(r){
+  if(r.departemen) $('txtDepartemen').textContent = r.departemen;
+  const chipM = $('chipMasuk'), chipP = $('chipPulang');
+  chipM.classList.toggle('done', !!r.sudahMasuk);
+  chipP.classList.toggle('done', !!r.sudahPulang);
+  chipM.querySelector('.v').textContent = formatJam(r.jamMasuk);
+  chipP.querySelector('.v').textContent = formatJam(r.jamPulang);
+
+  window._sudahMasuk = !!r.sudahMasuk;
+  window._sudahPulang = !!r.sudahPulang;
+  window._jamMasuk = r.jamMasuk || null;
+  window._minJamKerja = r.minJamKerja || MIN_JAM_KERJA_DEFAULT;
+  updateAbsenButton();
+}
+
+// Parsing jam yang defensif untuk tampilan chip.
+function formatJam(v){
+  if(!v) return '--:--';
   const s = String(v);
-  if (/^\d:\d{2}:\d{2}$/.test(s)) return '0' + s; // "5:31:00" -> "05:31:00"
-  return s;
+  if(s.includes('T')) return (s.split('T')[1] || '').slice(0,5); // jaga-jaga jika ada data lama bertipe Date
+  return s.slice(0,5);
 }
 
-function normalizeTanggal_(v) {
-  if (v instanceof Date) {
-    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+// Bangun objek Date "hari ini" dari string jam "HH:mm:ss" (dipakai utk hitung gate jam di HP)
+function jamKeDateHariIni(jamStr){
+  if(!jamStr) return null;
+  const parts = String(jamStr).split(':').map(Number);
+  const d = new Date();
+  d.setHours(parts[0]||0, parts[1]||0, parts[2]||0, 0);
+  return d;
+}
+
+function startGeolocation(){
+  if(!navigator.geolocation){
+    $('gpsStatus').textContent = 'Perangkat tidak mendukung GPS.';
+    $('gpsStatus').className = 'status-line bad';
+    return;
   }
-  return String(v);
+  watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+    enableHighAccuracy: true, maximumAge: 4000, timeout: 15000
+  });
 }
 
-function isDepartemenSabtuPendek_(departemen) {
-  if (!departemen) return false;
-  const target = String(departemen).trim().toLowerCase();
-  return DEPARTEMEN_SABTU_PENDEK.some(function (d) { return d.trim().toLowerCase() === target; });
+function onPositionError(err){
+  $('gpsStatus').textContent = 'Gagal mengambil lokasi. Aktifkan izin GPS di browser.';
+  $('gpsStatus').className = 'status-line bad';
+  $('btnAbsen').disabled = true;
+  $('btnAbsen').textContent = 'Lokasi tidak tersedia';
 }
 
-// Tentukan jarak minimal Masuk->Pulang yang berlaku untuk peserta ini PADA HARI INI.
-// Default MIN_JAM_KERJA, kecuali hari Sabtu + departemen termasuk DEPARTEMEN_SABTU_PENDEK.
-function minJamKerjaBerlaku_(departemen, now, tz) {
-  const hariISO = Utilities.formatDate(now, tz, 'u'); // ISO: '1'=Senin ... '6'=Sabtu, '7'=Minggu
-  if (hariISO === '6' && isDepartemenSabtuPendek_(departemen)) {
-    return MIN_JAM_KERJA_SABTU;
-  }
-  return MIN_JAM_KERJA;
+function onPosition(pos){
+  lastCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  const jarak = Math.round(distanceMeters(HOTEL_LAT, HOTEL_LNG, lastCoords.lat, lastCoords.lng));
+  renderGauge(jarak);
+  updateAbsenButton();
 }
 
-function getTodayLogs(id, tanggalStr) {
-  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_ABSENSI);
-  const data = sh.getDataRange().getValues();
-  let masuk = null, pulang = null;
-  for (let i = 1; i < data.length; i++) {
-    if (normalizeTanggal_(data[i][1]) === tanggalStr && String(data[i][2]) === String(id)) {
-      // Ambil kemunculan PERTAMA saja (bukan ditimpa terus tiap ketemu baris baru).
-      // Ini jaga-jaga kalau ada baris duplikat tersisa dari bug sebelumnya —
-      // supaya "jam masuk" yang dipakai tetap yang paling awal & konsisten.
-      if (data[i][6] === 'Masuk'  && !masuk)  masuk  = normalizeJam_(data[i][7]);
-      if (data[i][6] === 'Pulang' && !pulang) pulang = normalizeJam_(data[i][7]);
-    }
-  }
-  return { masuk, pulang };
-}
+function renderGauge(jarak){
+  const pct = Math.max(0, Math.min(100, Math.round((1 - jarak / (RADIUS_METER*3)) * 100)));
+  const inRange = jarak <= RADIUS_METER;
+  $('gaugeMeter').innerHTML = jarak + '<span> m</span>';
+  $('gaugeRing').style.setProperty('--pct', pct);
+  $('gaugeRing').style.background =
+    `conic-gradient(${inRange ? 'var(--ok)' : 'var(--warn)'} calc(var(--pct)*1%), #ece5d0 0)`;
 
-// ------------------------------------------------------------
-// ACTIONS
-// ------------------------------------------------------------
-function handleLogin(id, pin) {
-  const peserta = findPeserta(id);
-  if (!peserta) return { success: false, message: 'ID OJT tidak ditemukan.' };
-  if (peserta.status !== 'Aktif') return { success: false, message: 'Akun tidak aktif / masa OJT sudah berakhir. Hubungi HR/IT.' };
-  if (peserta.pin !== String(pin).trim()) return { success: false, message: 'PIN salah.' };
-
-  return {
-    success: true,
-    id: peserta.id,
-    nama: peserta.nama,
-    departemen: peserta.departemen,
-    asalSekolah: peserta.asalSekolah,
-    token: makeToken(peserta.id, peserta.pin)
-  };
-}
-
-// ------------------------------------------------------------
-// PENDAFTARAN MANDIRI (self-registration)
-// ------------------------------------------------------------
-
-// Daftar departemen utk dropdown form Daftar: gabungan default + yang sudah ada di sheet.
-function handleDaftarInfo() {
-  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_OJT);
-  const data = sh.getDataRange().getValues();
-  const set = {};
-  DEPARTEMEN_OPSI_DEFAULT.forEach(function (d) { set[d] = true; });
-  for (let i = 1; i < data.length; i++) {
-    const dep = data[i][3];
-    if (dep) set[String(dep).trim()] = true;
-  }
-  return { success: true, daftarDepartemen: Object.keys(set).sort() };
-}
-
-// Cari nomor ID_OJT terbesar yang sudah ada (pola PREFIX_ID_OJT + angka), lalu +1.
-// Dipanggil di dalam LockService supaya 2 orang daftar bersamaan tidak dapat ID sama.
-function generateIdBerikutnya_(sh) {
-  const data = sh.getDataRange().getValues();
-  const re = new RegExp('^' + PREFIX_ID_OJT + '(\\d+)$', 'i');
-  let maxNum = 0;
-  for (let i = 1; i < data.length; i++) {
-    const m = re.exec(String(data[i][0]).trim());
-    if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-  }
-  const next = maxNum + 1;
-  const digits = String(maxNum).length >= 3 ? String(next).length : 3;
-  return PREFIX_ID_OJT + String(next).padStart(digits, '0');
-}
-
-// Cari peserta dengan Nama yang sama persis (tidak case-sensitive, spasi awal/akhir
-// diabaikan). Dipakai utk cegah pendaftaran ganda ketika orang yg sama lupa sudah
-// pernah daftar dan pakai form Daftar lagi, alih-alih form Masuk.
-function findPesertaByNama_(sh, nama) {
-  const data = sh.getDataRange().getValues();
-  const target = String(nama).trim().toLowerCase();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][1]).trim().toLowerCase() === target) {
-      return { id: data[i][0], status: data[i][5] };
-    }
-  }
-  return null;
-}
-
-function handleDaftar(nama, asalSekolah, departemen, pin) {
-  nama = String(nama || '').trim();
-  asalSekolah = String(asalSekolah || '').trim();
-  departemen = String(departemen || '').trim();
-  pin = String(pin || '').trim();
-
-  if (!nama)        return { success: false, message: 'Nama lengkap wajib diisi.' };
-  if (!asalSekolah) return { success: false, message: 'Asal sekolah wajib diisi.' };
-  if (!departemen)  return { success: false, message: 'Departemen wajib dipilih.' };
-  if (!/^\d{4,8}$/.test(pin)) return { success: false, message: 'PIN harus angka, 4-8 digit.' };
-
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-  } catch (e) {
-    return { success: false, message: 'Server sedang sibuk, coba lagi sebentar.' };
-  }
-
-  try {
-    const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_OJT);
-
-    // Cegah daftar ganda: kalau nama yang sama sudah pernah terdaftar, tolak dan
-    // arahkan ke form Masuk (atau kontak HRD kalau lupa PIN) — bukan bikin akun baru.
-    const existing = findPesertaByNama_(sh, nama);
-    if (existing) {
-      return {
-        success: false,
-        message: 'Nama "' + nama + '" sudah terdaftar dengan ID ' + existing.id + '. ' +
-          'Kalau ini Anda, silakan Masuk pakai ID tersebut. Lupa PIN? Hubungi HRD/IT untuk reset, jangan daftar ulang.'
-      };
-    }
-
-    const newId = generateIdBerikutnya_(sh);
-
-    sh.appendRow([newId, nama, pin, departemen, asalSekolah, 'Aktif']);
-
-    // Paksa ulang format Plain Text + tulis ulang nilainya PERSIS di baris baru ini
-    // (sama alasannya dgn handleAbsen — format kolom yg di-set sekali di awal bisa
-    // kereset, jadi dipastikan lagi per-baris supaya ID/PIN tidak kehilangan nol
-    // di depan atau berubah jadi angka).
-    const lastRowOjt = sh.getLastRow();
-    sh.getRange(lastRowOjt, 1).setNumberFormat('@').setValue(newId); // ID_OJT
-    sh.getRange(lastRowOjt, 3).setNumberFormat('@').setValue(pin);   // PIN
-    SpreadsheetApp.flush(); // commit sebelum lock dilepas, sama alasannya spt di handleAbsen
-
-    return {
-      success: true,
-      id: newId,
-      nama: nama,
-      departemen: departemen,
-      token: makeToken(newId, pin)
-    };
-  } finally {
-    lock.releaseLock();
+  const st = $('gpsStatus');
+  if(inRange){
+    st.textContent = 'Anda berada di dalam area hotel ✓';
+    st.className = 'status-line ok';
+  }else{
+    st.textContent = 'Di luar area hotel — mendekat ' + (jarak - RADIUS_METER) + ' m lagi';
+    st.className = 'status-line bad';
   }
 }
 
-function handleStatus(id, token) {
-  const peserta = findPeserta(id);
-  if (!peserta) return { success: false, message: 'Peserta OJT tidak ditemukan.', forceLogout: true };
-  if (makeToken(peserta.id, peserta.pin) !== token) {
-    return { success: false, message: 'Sesi tidak valid, silakan login ulang.', forceLogout: true };
+function updateAbsenButton(){
+  const btn = $('btnAbsen');
+
+  // Sudah selesai Masuk & Pulang hari ini — kunci total, tidak bisa absen lagi.
+  if(window._sudahMasuk && window._sudahPulang){
+    btn.disabled = true;
+    btn.textContent = 'Absen hari ini selesai ✓';
+    return;
   }
 
-  const tz = Session.getScriptTimeZone();
-  const now = new Date();
-  const tanggalStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
-  const logs = getTodayLogs(id, tanggalStr);
-
-  return {
-    success: true,
-    nama: peserta.nama,
-    departemen: peserta.departemen,
-    sudahMasuk: !!logs.masuk,
-    jamMasuk: logs.masuk || null,
-    sudahPulang: !!logs.pulang,
-    jamPulang: logs.pulang || null,
-    minJamKerja: minJamKerjaBerlaku_(peserta.departemen, now, tz)
-  };
-}
-
-function handleAbsen(id, token, lat, lng) {
-  const peserta = findPeserta(id);
-  if (!peserta) return { success: false, message: 'Peserta OJT tidak ditemukan.' };
-  if (makeToken(peserta.id, peserta.pin) !== token) {
-    return { success: false, message: 'Sesi tidak valid, silakan login ulang.', forceLogout: true };
-  }
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    return { success: false, message: 'Lokasi GPS tidak valid.' };
-  }
-
-  const jarak = Math.round(distanceMeters(HOTEL_LAT, HOTEL_LNG, lat, lng));
-  if (jarak > RADIUS_METER) {
-    return {
-      success: false,
-      message: 'Anda berada di luar area hotel (jarak ' + jarak + ' m). Absen ditolak.',
-      jarak: jarak
-    };
-  }
-
-  // Lock — mencegah 2 request (dobel-tap) diproses bersamaan & menghasilkan baris ganda
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-  } catch (e) {
-    return { success: false, message: 'Server sedang sibuk, coba lagi sebentar.' };
-  }
-
-  try {
-    const tz = Session.getScriptTimeZone();
+  // Sudah Masuk, menunggu Pulang — gate minimal sekian jam sejak Masuk.
+  // Angka jamnya datang dari server (window._minJamKerja) karena bisa beda
+  // tergantung hari & departemen (mis. Sabtu utk TKJ IT/Sales/Back Office = 6 jam).
+  if(window._sudahMasuk && !window._sudahPulang){
+    const masukDate = jamKeDateHariIni(window._jamMasuk);
     const now = new Date();
-    const tanggalStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
-    const jamStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
+    const elapsedMs = masukDate ? (now - masukDate) : 0;
+    const minJam = window._minJamKerja || MIN_JAM_KERJA_DEFAULT;
+    const minMs = minJam * 3600000;
 
-    const logs = getTodayLogs(id, tanggalStr);
-    let jenis;
-    if (!logs.masuk) {
-      jenis = 'Masuk';
-    } else if (!logs.pulang) {
-      // Gate: Absen Pulang hanya boleh setelah minimal X jam sejak Masuk (X tergantung
-      // hari & departemen, lihat minJamKerjaBerlaku_). Dihitung numerik (detik sejak
-      // 00:00), BUKAN dgn parsing string ke Date — string "HH:mm:ss" tanpa nol di depan
-      // (mis. data lama "7:40:55") akan membuat `new Date("...T7:40:55")` invalid/Invalid
-      // Date dan gate ini bisa gagal diam-diam.
-      const minJamBerlaku = minJamKerjaBerlaku_(peserta.departemen, now, tz);
-      const elapsedJam = (jamKeDetik_(jamStr) - jamKeDetik_(logs.masuk)) / 3600;
-      if (elapsedJam < minJamBerlaku) {
-        const sisaJam = Math.ceil((minJamBerlaku - elapsedJam) * 10) / 10;
-        return {
-          success: false,
-          message: 'Belum bisa Absen Pulang. Minimal ' + minJamBerlaku + ' jam sejak Masuk (' + sisaJam + ' jam lagi).'
-        };
-      }
-      jenis = 'Pulang';
-    } else {
-      return { success: false, message: 'Anda sudah absen Masuk & Pulang hari ini.' };
+    if(masukDate && elapsedMs < minMs){
+      const sisaMs = minMs - elapsedMs;
+      const sisaJam = Math.floor(sisaMs / 3600000);
+      const sisaMenit = Math.floor((sisaMs % 3600000) / 60000);
+      btn.disabled = true;
+      btn.textContent = `Absen Pulang tersedia ${sisaJam}j ${sisaMenit}m lagi`;
+      return;
     }
+  }
 
-    const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_ABSENSI);
-    sh.appendRow([
-      now, tanggalStr, peserta.id, peserta.nama, peserta.departemen, peserta.asalSekolah,
-      jenis, jamStr, lat, lng, jarak, 'Dalam Radius'
-    ]);
-
-    // PAKSA ulang format Plain Text + tulis ulang nilainya PERSIS di baris yang baru
-    // saja ditambahkan. Ini bukan cuma jaga-jaga — kolom yang di-set '@' sekali di awal
-    // (lewat setupSheets/fixSheetFormats) TERNYATA bisa "kereset" balik ke Automatic
-    // kalau ada operasi lain di sheet (mis. copy-paste saat hapus baris duplikat
-    // manual). Dengan memaksa format+value di baris ITU JUGA setiap kali absen baru
-    // masuk, bug "5:31:00" jadi Time value tidak akan berulang lagi ke depannya,
-    // apapun yang terjadi pada format kolom secara keseluruhan.
-    const lastRow = sh.getLastRow();
-    sh.getRange(lastRow, 2).setNumberFormat('@').setValue(tanggalStr); // Tanggal
-    sh.getRange(lastRow, 8).setNumberFormat('@').setValue(jamStr);     // Jam
-
-    // WAJIB flush sebelum lock dilepas — tanpa ini, penulisan appendRow() bisa belum
-    // benar2 "commit" saat eksekusi request BERIKUTNYA (yg sudah antre di lock) mulai
-    // baca ulang sheet. Itulah sebabnya beberapa "Masuk" bisa lolos dobel meski sudah
-    // pakai LockService: request kedua membaca versi sheet yg masih belum ter-update.
-    SpreadsheetApp.flush();
-
-    return { success: true, jenis: jenis, jam: jamStr, nama: peserta.nama, jarak: jarak };
-  } finally {
-    lock.releaseLock();
+  const nextLabel = window._sudahMasuk ? 'Absen Pulang' : 'Absen Masuk';
+  if(!lastCoords){
+    btn.disabled = true;
+    btn.textContent = 'Menunggu lokasi…';
+    return;
+  }
+  const jarak = Math.round(distanceMeters(HOTEL_LAT, HOTEL_LNG, lastCoords.lat, lastCoords.lng));
+  if(jarak > RADIUS_METER){
+    btn.disabled = true;
+    btn.textContent = nextLabel + ' (di luar radius)';
+  }else{
+    btn.disabled = false;
+    btn.textContent = nextLabel;
   }
 }
 
-// ------------------------------------------------------------
-// RIWAYAT ABSENSI BULANAN (per peserta, dilihat sendiri di index.html)
-// ------------------------------------------------------------
-function handleRiwayatBulanan(id, token, bulan) {
-  const peserta = findPeserta(id);
-  if (!peserta) return { success: false, message: 'Peserta OJT tidak ditemukan.', forceLogout: true };
-  if (makeToken(peserta.id, peserta.pin) !== token) {
-    return { success: false, message: 'Sesi tidak valid, silakan login ulang.', forceLogout: true };
-  }
-  if (!/^\d{4}-\d{2}$/.test(String(bulan))) {
-    return { success: false, message: 'Format bulan tidak valid.' };
-  }
+async function doAbsen(){
+  if(!lastCoords) return;
+  const btn = $('btnAbsen');
+  // Kunci tombol SEGERA & JANGAN dilepas otomatis — status final tombol
+  // ditentukan ulang oleh refreshStatus()/updateAbsenButton() di bawah,
+  // supaya tidak ada celah dobel-tap yang bikin data numpuk.
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Mengirim…';
 
-  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_ABSENSI);
-  const data = sh.getDataRange().getValues();
-  const pairMap = {}; // tanggal -> { jamMasuk, jamPulang }
-
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][2]) !== String(id)) continue;
-    const tanggal = normalizeTanggal_(data[i][1]);
-    if (tanggal.slice(0, 7) !== bulan) continue;
-
-    if (!pairMap[tanggal]) pairMap[tanggal] = { jamMasuk: null, jamPulang: null };
-    const jenis = data[i][6];
-    const jam = normalizeJam_(data[i][7]);
-    if (jenis === 'Masuk'  && !pairMap[tanggal].jamMasuk)  pairMap[tanggal].jamMasuk  = jam;
-    if (jenis === 'Pulang') pairMap[tanggal].jamPulang = jam; // ambil yg terakhir kalau ada >1
-  }
-
-  const tanggalList = Object.keys(pairMap).sort();
-  let totalDetikBulan = 0;
-
-  const detail = tanggalList.map(function (tgl) {
-    const p = pairMap[tgl];
-    let totalJamKerja = null;
-    if (p.jamMasuk && p.jamPulang) {
-      const detik = jamKeDetik_(p.jamPulang) - jamKeDetik_(p.jamMasuk);
-      if (detik > 0) {
-        totalDetikBulan += detik;
-        totalJamKerja = formatJamDetik_(detik);
-      }
+  try{
+    const r = await callApi({
+      action:'absen', id: session.id, token: session.token,
+      lat: lastCoords.lat, lng: lastCoords.lng
+    });
+    if(!r.success){
+      if(r.forceLogout){ doLogout(); return; }
+      showToast(r.message || 'Absen gagal.', true);
+      updateAbsenButton(); // kembalikan tombol ke state yg sesuai (mis. masih dalam radius, boleh coba lagi)
+      return;
     }
-    return { tanggal: tgl, jamMasuk: p.jamMasuk, jamPulang: p.jamPulang, totalJamKerja: totalJamKerja };
-  });
-
-  const hariHadir = tanggalList.length;
-  const rataDetik = hariHadir > 0 ? totalDetikBulan / hariHadir : 0;
-
-  return {
-    success: true,
-    bulan: bulan,
-    ringkasan: {
-      hariHadir: hariHadir,
-      totalJamKerja: formatJamDetik_(totalDetikBulan),
-      rataJamPerHari: formatJamDetik_(rataDetik)
-    },
-    detail: detail
-  };
-}
-
-function formatJamDetik_(detik) {
-  const jamBulat = Math.floor(detik / 3600);
-  const menit = Math.round((detik % 3600) / 60);
-  return jamBulat + 'j ' + menit + 'm';
-}
-
-// ------------------------------------------------------------
-// DASHBOARD ADMIN / HRD
-// ------------------------------------------------------------
-function adminMakeToken() {
-  return Utilities.base64EncodeWebSafe('admin:' + ADMIN_PASSWORD);
-}
-
-function handleAdminLogin(password) {
-  if (String(password) !== ADMIN_PASSWORD) {
-    return { success: false, message: 'Password salah.' };
+    showToast(`Absen ${r.jenis} berhasil — ${r.jam} (${r.jarak} m dari hotel)`);
+    await refreshStatus(); // sumber kebenaran status tombol berikutnya berasal dari server, bukan asumsi klien
+  }catch(e){
+    showToast('Tidak dapat terhubung ke server.', true);
+    updateAbsenButton();
   }
-  return { success: true, token: adminMakeToken() };
 }
 
-function isAdminTokenValid(token) {
-  return token === adminMakeToken();
+// Perbarui hitung-mundur gate setiap menit tanpa perlu panggil server
+setInterval(() => { if(session) updateAbsenButton(); }, 60000);
+
+/* ====== RIWAYAT ABSENSI BULANAN ====== */
+let bulanRiwayat = null; // 'YYYY-MM' bulan yg sedang ditampilkan
+
+function bukaRiwayat(){
+  $('screenAbsen').classList.add('hidden');
+  $('screenRiwayat').classList.remove('hidden');
+  const now = new Date();
+  bulanRiwayat = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  muatRiwayat();
 }
 
-// Ambil rekap absensi untuk dashboard, dengan filter tanggal (wajib) & departemen (opsional).
-// Data dipasangkan per (tanggal, peserta): satu baris = 1 hari kerja 1 peserta,
-// berisi Jam Masuk, Jam Pulang, dan Total Jam Kerja hasil selisihnya.
-function handleAdminGetData(token, startDate, endDate, departemen, asalSekolah) {
-  if (!isAdminTokenValid(token)) {
-    return { success: false, message: 'Sesi admin tidak valid, silakan login ulang.', forceLogout: true };
-  }
-  if (!startDate || !endDate) {
-    return { success: false, message: 'Rentang tanggal wajib diisi.' };
-  }
+function tutupRiwayat(){
+  $('screenRiwayat').classList.add('hidden');
+  $('screenAbsen').classList.remove('hidden');
+}
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function gantiBulan(delta){
+  const [y, m] = bulanRiwayat.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  bulanRiwayat = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  muatRiwayat();
+}
 
-  // Daftar peserta OJT (utk hitung total aktif & daftar departemen/asal sekolah)
-  const ojtData = ss.getSheetByName(SHEET_OJT).getDataRange().getValues();
-  const departemenSet = {};
-  const asalSekolahSet = {};
-  let totalAktif = 0;
-  for (let i = 1; i < ojtData.length; i++) {
-    const dep = ojtData[i][3];
-    const sekolah = ojtData[i][4];
-    if (dep) departemenSet[dep] = true;
-    if (sekolah) asalSekolahSet[String(sekolah).trim()] = true;
-    if (ojtData[i][5] === 'Aktif') totalAktif++;
-  }
-  const daftarDepartemen = Object.keys(departemenSet).sort();
-  const daftarAsalSekolah = Object.keys(asalSekolahSet).sort();
+const NAMA_BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
-  // Pasangkan Masuk & Pulang per (tanggal, ID_OJT)
-  const absData = ss.getSheetByName(SHEET_ABSENSI).getDataRange().getValues();
-  const pairMap = {}; // key: 'tanggal|id' -> { tanggal, id, nama, departemen, asalSekolah, jamMasuk, jamPulang }
-  const asalSekolahTarget = asalSekolah ? String(asalSekolah).trim().toLowerCase() : '';
+async function muatRiwayat(){
+  const [y, m] = bulanRiwayat.split('-').map(Number);
+  $('txtBulanRiwayat').textContent = NAMA_BULAN[m-1] + ' ' + y;
+  $('detailRiwayatList').innerHTML = '<div class="riwayat-empty"><span class="spin"></span>Memuat riwayat…</div>';
+  $('rHariHadir').textContent = '—';
+  $('rTotalJam').textContent = '—';
+  $('rRataJam').textContent = '—';
 
-  for (let i = 1; i < absData.length; i++) {
-    const r = absData[i];
-    const tanggal = normalizeTanggal_(r[1]);
-    if (tanggal < startDate || tanggal > endDate) continue;
-    if (departemen && r[4] !== departemen) continue;
-    if (asalSekolahTarget && String(r[5]).trim().toLowerCase() !== asalSekolahTarget) continue;
-
-    const key = tanggal + '|' + r[2];
-    if (!pairMap[key]) {
-      pairMap[key] = {
-        tanggal: tanggal, id: r[2], nama: r[3], departemen: r[4], asalSekolah: r[5],
-        jamMasuk: null, jamPulang: null
-      };
+  try{
+    const r = await callApi({ action:'riwayatBulanan', id: session.id, token: session.token, bulan: bulanRiwayat });
+    if(!r.success){
+      if(r.forceLogout){ doLogout(); return; }
+      $('detailRiwayatList').innerHTML = `<div class="riwayat-empty">${r.message || 'Gagal memuat riwayat.'}</div>`;
+      return;
     }
-    const jenis = r[6];
-    const jam = normalizeJam_(r[7]);
-    if (jenis === 'Masuk')  pairMap[key].jamMasuk  = jam;
-    if (jenis === 'Pulang') pairMap[key].jamPulang = jam;
+    $('rHariHadir').textContent = r.ringkasan.hariHadir + ' hari';
+    $('rTotalJam').textContent = r.ringkasan.totalJamKerja;
+    $('rRataJam').textContent = r.ringkasan.rataJamPerHari;
+
+    if(!r.detail.length){
+      $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Belum ada absen di bulan ini.</div>';
+      return;
+    }
+    $('detailRiwayatList').innerHTML = r.detail.map(d => `
+      <div class="detail-row">
+        <span class="tgl">${d.tanggal.slice(8,10)}/${d.tanggal.slice(5,7)}</span>
+        <span class="jam">${formatJam(d.jamMasuk)} – ${formatJam(d.jamPulang)}</span>
+        <span class="tot">${d.totalJamKerja || '-'}</span>
+      </div>
+    `).join('');
+  }catch(e){
+    $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Tidak dapat terhubung ke server.</div>';
   }
-
-  const rows = Object.keys(pairMap).map(function (key) {
-    const p = pairMap[key];
-    let totalJamKerja = null, totalJamKerjaJam = null;
-    if (p.jamMasuk && p.jamPulang) {
-      const detik = jamKeDetik_(p.jamPulang) - jamKeDetik_(p.jamMasuk);
-      if (detik > 0) {
-        totalJamKerjaJam = detik / 3600;
-        const jamBulat = Math.floor(totalJamKerjaJam);
-        const menit = Math.round((totalJamKerjaJam - jamBulat) * 60);
-        totalJamKerja = jamBulat + 'j ' + menit + 'm';
-      }
-    }
-    return {
-      tanggal: p.tanggal, id: p.id, nama: p.nama, departemen: p.departemen, asalSekolah: p.asalSekolah,
-      jamMasuk: p.jamMasuk, jamPulang: p.jamPulang,
-      totalJamKerja: totalJamKerja, totalJamKerjaJam: totalJamKerjaJam
-    };
-  }).sort(function (a, b) {
-    return (a.tanggal + (a.jamMasuk || '')) < (b.tanggal + (b.jamMasuk || '')) ? 1 : -1;
-  });
-
-  // Grafik 1: jumlah peserta yang Masuk per tanggal
-  const hadirPerTanggal = {};
-  // Grafik 2: rata-rata jam kerja per tanggal (hanya yg sudah Masuk & Pulang)
-  const jamKerjaPerTanggal = {};
-
-  rows.forEach(function (r) {
-    if (r.jamMasuk) hadirPerTanggal[r.tanggal] = (hadirPerTanggal[r.tanggal] || 0) + 1;
-    if (r.totalJamKerjaJam != null) {
-      if (!jamKerjaPerTanggal[r.tanggal]) jamKerjaPerTanggal[r.tanggal] = [];
-      jamKerjaPerTanggal[r.tanggal].push(r.totalJamKerjaJam);
-    }
-  });
-
-  const chartKehadiran = Object.keys(hadirPerTanggal).sort().map(function (tgl) {
-    return { tanggal: tgl, jumlah: hadirPerTanggal[tgl] };
-  });
-  const chartJamKerja = Object.keys(jamKerjaPerTanggal).sort().map(function (tgl) {
-    const arr = jamKerjaPerTanggal[tgl];
-    const avg = arr.reduce(function (a, b) { return a + b; }, 0) / arr.length;
-    return { tanggal: tgl, rataJam: Math.round(avg * 10) / 10 };
-  });
-
-  const tz = Session.getScriptTimeZone();
-  const hariIniStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  const hadirHariIni = hadirPerTanggal[hariIniStr] || 0;
-
-  const semuaJamKerja = rows.filter(function (r) { return r.totalJamKerjaJam != null; })
-    .map(function (r) { return r.totalJamKerjaJam; });
-  const rataJamKerja = semuaJamKerja.length
-    ? Math.round((semuaJamKerja.reduce(function (a, b) { return a + b; }, 0) / semuaJamKerja.length) * 10) / 10
-    : 0;
-
-  return {
-    success: true,
-    rows: rows,
-    daftarDepartemen: daftarDepartemen,
-    daftarAsalSekolah: daftarAsalSekolah,
-    summary: {
-      totalPesertaAktif: totalAktif,
-      hadirHariIni: hadirHariIni,
-      rataJamKerja: rataJamKerja,
-      totalRecord: rows.length
-    },
-    chartKehadiran: chartKehadiran,
-    chartJamKerja: chartJamKerja
-  };
 }
+
+/* ====== PWA: install prompt & service worker ====== */
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBar').classList.add('show');
+});
+
+async function installApp(){
+  if(!deferredInstallPrompt) return;
+  $('installBar').classList.remove('show');
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+}
+
+window.addEventListener('appinstalled', () => {
+  $('installBar').classList.remove('show');
+});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+/* ====== INIT ====== */
+if(session){ enterAbsenScreen(); }
+
+// Enter-to-submit di form login
+$('inpPin').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+$('inpId').addEventListener('keydown', e => { if(e.key==='Enter') $('inpPin').focus(); });
+</script>
+</body>
+</html>
