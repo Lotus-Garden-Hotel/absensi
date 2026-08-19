@@ -725,38 +725,76 @@ function gantiBulan(delta){
 
 const NAMA_BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
+function riwayatCacheKey(bulan){
+  return `absensi_riwayat_${session.id}_${bulan}`;
+}
+
+function bulanSekarangStr(){
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+}
+
+function renderRiwayatData(r){
+  $('rHariHadir').textContent = r.ringkasan.hariHadir + ' hari';
+  $('rTotalJam').textContent = r.ringkasan.totalJamKerja;
+  $('rRataJam').textContent = r.ringkasan.rataJamPerHari;
+
+  if(!r.detail.length){
+    $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Belum ada absen di bulan ini.</div>';
+    return;
+  }
+  $('detailRiwayatList').innerHTML = r.detail.map(d => `
+    <div class="detail-row">
+      <span class="tgl">${d.tanggal.slice(8,10)}/${d.tanggal.slice(5,7)}</span>
+      <span class="jam">${formatJam(d.jamMasuk)} – ${formatJam(d.jamPulang)}</span>
+      <span class="tot">${d.totalJamKerja || '-'}</span>
+    </div>
+  `).join('');
+}
+
 async function muatRiwayat(){
   const [y, m] = bulanRiwayat.split('-').map(Number);
   $('txtBulanRiwayat').textContent = NAMA_BULAN[m-1] + ' ' + y;
-  $('detailRiwayatList').innerHTML = '<div class="riwayat-empty"><span class="spin"></span>Memuat riwayat…</div>';
-  $('rHariHadir').textContent = '—';
-  $('rTotalJam').textContent = '—';
-  $('rRataJam').textContent = '—';
 
+  const cacheKey = riwayatCacheKey(bulanRiwayat);
+  const isBulanSekarang = (bulanRiwayat === bulanSekarangStr());
+  let cached = null;
+  try{
+    const raw = localStorage.getItem(cacheKey);
+    if(raw) cached = JSON.parse(raw);
+  }catch(e){ cached = null; }
+
+  if(cached){
+    // Tampilkan instan dari cache — tidak ada spinner/loading terasa.
+    renderRiwayatData(cached);
+  }else{
+    $('detailRiwayatList').innerHTML = '<div class="riwayat-empty"><span class="spin"></span>Memuat riwayat…</div>';
+    $('rHariHadir').textContent = '—';
+    $('rTotalJam').textContent = '—';
+    $('rRataJam').textContent = '—';
+  }
+
+  // Bulan yang SUDAH LEWAT (bukan bulan berjalan): kalau sudah ada cache, datanya
+  // tidak akan berubah lagi — tidak perlu tarik ulang dari server sama sekali.
+  if(cached && !isBulanSekarang){
+    return;
+  }
+
+  // Bulan berjalan (datanya terus bertambah tiap hari) ATAU belum ada cache sama
+  // sekali: selalu tarik data terbaru dari server. Kalau ada cache lama, ini jadi
+  // "silent refresh" di belakang layar — tampilan sudah terisi (dari cache), lalu
+  // diam-diam diganti dgn data terbaru begitu server merespons.
   try{
     const r = await callApi({ action:'riwayatBulanan', id: session.id, token: session.token, bulan: bulanRiwayat });
     if(!r.success){
       if(r.forceLogout){ doLogout(); return; }
-      $('detailRiwayatList').innerHTML = `<div class="riwayat-empty">${r.message || 'Gagal memuat riwayat.'}</div>`;
+      if(!cached) $('detailRiwayatList').innerHTML = `<div class="riwayat-empty">${r.message || 'Gagal memuat riwayat.'}</div>`;
       return;
     }
-    $('rHariHadir').textContent = r.ringkasan.hariHadir + ' hari';
-    $('rTotalJam').textContent = r.ringkasan.totalJamKerja;
-    $('rRataJam').textContent = r.ringkasan.rataJamPerHari;
-
-    if(!r.detail.length){
-      $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Belum ada absen di bulan ini.</div>';
-      return;
-    }
-    $('detailRiwayatList').innerHTML = r.detail.map(d => `
-      <div class="detail-row">
-        <span class="tgl">${d.tanggal.slice(8,10)}/${d.tanggal.slice(5,7)}</span>
-        <span class="jam">${formatJam(d.jamMasuk)} – ${formatJam(d.jamPulang)}</span>
-        <span class="tot">${d.totalJamKerja || '-'}</span>
-      </div>
-    `).join('');
+    localStorage.setItem(cacheKey, JSON.stringify(r));
+    renderRiwayatData(r);
   }catch(e){
-    $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Tidak dapat terhubung ke server.</div>';
+    if(!cached) $('detailRiwayatList').innerHTML = '<div class="riwayat-empty">Tidak dapat terhubung ke server.</div>';
   }
 }
 
