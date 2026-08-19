@@ -115,7 +115,7 @@
     <div class="sub">Khusus Admin / HRD</div>
     <div class="err-msg" id="loginErr"></div>
     <div class="field">
-      <label>Login Ke Administrator</label>
+      <label>Password Admin</label>
       <input id="inpPass" type="password" autocomplete="off" placeholder="••••••••">
     </div>
     <button class="btn" id="btnLogin" onclick="doAdminLogin()">Masuk</button>
@@ -143,6 +143,10 @@
       <div class="field" style="grid-column:1 / -1;">
         <label>Departemen</label>
         <select id="fDept"><option value="">Semua Departemen</option></select>
+      </div>
+      <div class="field" style="grid-column:1 / -1;">
+        <label>Asal Sekolah</label>
+        <select id="fAsalSekolah"><option value="">Semua Asal Sekolah</option></select>
       </div>
       <div class="actions">
         <button class="btn" onclick="loadData()">Terapkan Filter</button>
@@ -255,12 +259,13 @@ async function loadData(){
   const startDate = $('fStart').value;
   const endDate = $('fEnd').value;
   const departemen = $('fDept').value;
+  const asalSekolah = $('fAsalSekolah').value;
   if(!startDate || !endDate){ return; }
 
   $('tblBody').innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
 
   try{
-    const r = await callApi({ action:'adminGetData', token: adminToken, startDate, endDate, departemen });
+    const r = await callApi({ action:'adminGetData', token: adminToken, startDate, endDate, departemen, asalSekolah });
     if(!r.success){
       if(r.forceLogout){ doAdminLogout(); return; }
       $('tblBody').innerHTML = `<tr><td colspan="8" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
@@ -268,6 +273,7 @@ async function loadData(){
     }
     currentRows = r.rows;
     renderDeptFilter(r.daftarDepartemen, departemen);
+    renderAsalSekolahFilter(r.daftarAsalSekolah, asalSekolah);
     renderSummary(r.summary);
     renderTable(r.rows);
     $('lastUpdated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
@@ -294,6 +300,14 @@ function renderDeptFilter(list, selected){
   const current = selected || sel.value;
   sel.innerHTML = '<option value="">Semua Departemen</option>' +
     list.map(d => `<option value="${d}">${d}</option>`).join('');
+  sel.value = current;
+}
+
+function renderAsalSekolahFilter(list, selected){
+  const sel = $('fAsalSekolah');
+  const current = selected || sel.value;
+  sel.innerHTML = '<option value="">Semua Asal Sekolah</option>' +
+    list.map(s => `<option value="${s}">${s}</option>`).join('');
   sel.value = current;
 }
 
