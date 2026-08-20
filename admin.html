@@ -255,6 +255,47 @@ function enterDashboard(){
   autoRefreshTimer = setInterval(loadData, 45000);
 }
 
+// ====== CACHE LOKAL (localStorage) — tampil instan, lalu diam-diam refresh ======
+const ADMIN_CACHE_PREFIX = 'admin_cache_';
+const ADMIN_CACHE_INDEX_KEY = 'admin_cache_index'; // daftar key cache + timestamp, utk pruning
+const ADMIN_CACHE_MAX = 15; // maks kombinasi filter yg disimpan, biar localStorage tidak membengkak
+
+function adminCacheKey(startDate, endDate, departemen, asalSekolah){
+  return ADMIN_CACHE_PREFIX + [startDate, endDate, departemen || '', asalSekolah || ''].join('|');
+}
+
+function adminCacheTandai(key){
+  let idx = [];
+  try{ idx = JSON.parse(localStorage.getItem(ADMIN_CACHE_INDEX_KEY) || '[]'); }catch(e){ idx = []; }
+  idx = idx.filter(k => k !== key);
+  idx.push(key);
+  while(idx.length > ADMIN_CACHE_MAX){
+    const dibuang = idx.shift();
+    localStorage.removeItem(dibuang);
+  }
+  localStorage.setItem(ADMIN_CACHE_INDEX_KEY, JSON.stringify(idx));
+}
+
+function applyAdminData(r, departemen, asalSekolah){
+  currentRows = r.rows;
+  renderDeptFilter(r.daftarDepartemen, departemen);
+  renderAsalSekolahFilter(r.daftarAsalSekolah, asalSekolah);
+  renderSummary(r.summary);
+  renderTable(r.rows);
+
+  // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat, tabel & ringkasan
+  // yg sudah berhasil dimuat TIDAK ikut hilang.
+  try{
+    renderCharts(r.chartKehadiran, r.chartJamKerja);
+  }catch(chartErr){
+    console.error('Gagal render grafik:', chartErr);
+    $('chartKehadiran').closest('.panel').querySelector('.chart-wrap').innerHTML =
+      '<div class="empty-state">Grafik gagal dimuat.</div>';
+    $('chartJamKerja').closest('.panel').querySelector('.chart-wrap').innerHTML =
+      '<div class="empty-state">Grafik gagal dimuat.</div>';
+  }
+}
+
 async function loadData(){
   const startDate = $('fStart').value;
   const endDate = $('fEnd').value;
@@ -262,36 +303,43 @@ async function loadData(){
   const asalSekolah = $('fAsalSekolah').value;
   if(!startDate || !endDate){ return; }
 
-  $('tblBody').innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
+  const cacheKey = adminCacheKey(startDate, endDate, departemen, asalSekolah);
+  let cached = null;
+  try{
+    const raw = localStorage.getItem(cacheKey);
+    if(raw) cached = JSON.parse(raw);
+  }catch(e){ cached = null; }
 
+  if(cached){
+    // Tampil instan dari cache — tidak ada spinner terasa.
+    applyAdminData(cached, departemen, asalSekolah);
+    $('lastUpdated').textContent = 'Menampilkan data tersimpan — memperbarui…';
+  }else{
+    $('tblBody').innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
+  }
+
+  // Selalu tarik ulang dari server (beda dgn Riwayat Bulanan yg bisa "ditutup" utk
+  // bulan lalu) — data absensi dashboard admin terus bertambah sepanjang hari, jadi
+  // tidak boleh berhenti di cache lama. Kalau ada cache, ini jadi silent refresh:
+  // tampilan sudah terisi, lalu diam-diam diganti data terbaru begitu server merespons.
   try{
     const r = await callApi({ action:'adminGetData', token: adminToken, startDate, endDate, departemen, asalSekolah });
     if(!r.success){
       if(r.forceLogout){ doAdminLogout(); return; }
-      $('tblBody').innerHTML = `<tr><td colspan="8" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
+      if(!cached) $('tblBody').innerHTML = `<tr><td colspan="8" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
       return;
     }
-    currentRows = r.rows;
-    renderDeptFilter(r.daftarDepartemen, departemen);
-    renderAsalSekolahFilter(r.daftarAsalSekolah, asalSekolah);
-    renderSummary(r.summary);
-    renderTable(r.rows);
+    localStorage.setItem(cacheKey, JSON.stringify(r));
+    adminCacheTandai(cacheKey);
+    applyAdminData(r, departemen, asalSekolah);
     $('lastUpdated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-
-    // Grafik diisolasi try/catch sendiri — kalau Chart.js gagal dimuat, tabel & ringkasan
-    // yg sudah berhasil dimuat TIDAK ikut hilang.
-    try{
-      renderCharts(r.chartKehadiran, r.chartJamKerja);
-    }catch(chartErr){
-      console.error('Gagal render grafik:', chartErr);
-      $('chartKehadiran').closest('.panel').querySelector('.chart-wrap').innerHTML =
-        '<div class="empty-state">Grafik gagal dimuat.</div>';
-      $('chartJamKerja').closest('.panel').querySelector('.chart-wrap').innerHTML =
-        '<div class="empty-state">Grafik gagal dimuat.</div>';
-    }
   }catch(e){
     console.error('Gagal memuat data absensi:', e);
-    $('tblBody').innerHTML = '<tr><td colspan="8" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
+    if(!cached){
+      $('tblBody').innerHTML = '<tr><td colspan="8" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
+    }else{
+      $('lastUpdated').textContent = 'Offline — gagal memperbarui, menampilkan data tersimpan terakhir.';
+    }
   }
 }
 
