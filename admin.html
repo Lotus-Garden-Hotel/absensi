@@ -103,6 +103,48 @@
     .cards{ grid-template-columns:repeat(4,1fr); }
     .charts-row{ display:grid; grid-template-columns:1.4fr 1fr; gap:18px; }
   }
+
+  /* ---------- TAB SWITCHER ---------- */
+  .tabs{ display:flex; gap:8px; margin-bottom:18px; }
+  .tab-btn{
+    flex:1; padding:11px; border-radius:9px; border:1.5px solid #eee3c4; background:#fff;
+    font-family:'Jost',sans-serif; font-weight:600; font-size:13px; color:var(--ink-soft); cursor:pointer;
+  }
+  .tab-btn.active{ background:var(--green); color:#fff; border-color:var(--green); }
+
+  /* ---------- KELOLA PESERTA ---------- */
+  .btn-tambah{
+    width:100%; margin-bottom:16px; padding:12px; border:none; border-radius:9px;
+    background:var(--gold); color:#fff; font-family:'Jost',sans-serif; font-weight:600;
+    font-size:14px; cursor:pointer;
+  }
+  .badge.nonaktif{ background:var(--warn-bg); color:var(--warn); }
+  .aksi-btn{
+    border:none; background:none; color:var(--green); font-size:12px; font-weight:600;
+    cursor:pointer; padding:3px 6px; text-decoration:underline;
+  }
+  .aksi-btn.warn{ color:var(--warn); }
+
+  /* ---------- MODAL ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(43,36,23,.45); z-index:100;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-box{
+    background:#fff; border-radius:16px; padding:24px; width:100%; max-width:420px;
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal-box h3{ font-size:18px; margin-bottom:16px; }
+  .modal-box .field{ margin-bottom:14px; }
+  .modal-box .field label{ display:block; font-size:11px; letter-spacing:1px; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:6px; font-weight:500; }
+  .modal-box .field input, .modal-box .field select{
+    width:100%; padding:10px 12px; border-radius:8px; border:1.5px solid #e6dfc9; background:var(--cream);
+    font-family:'Jost',sans-serif; font-size:14px; color:var(--ink); outline:none;
+  }
+  .modal-box .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .modal-actions{ display:flex; gap:10px; margin-top:8px; }
+  .modal-actions .btn{ flex:1; }
 </style>
 </head>
 <body>
@@ -131,6 +173,12 @@
   </header>
 
   <main>
+    <div class="tabs">
+      <button class="tab-btn active" id="tabDashboardBtn" onclick="gantiTab('dashboard')">📊 Dashboard</button>
+      <button class="tab-btn" id="tabPesertaBtn" onclick="gantiTab('peserta')">👥 Kelola Peserta</button>
+    </div>
+
+    <div id="viewDashboard">
     <div class="filters">
       <div class="field">
         <label>Dari Tanggal</label>
@@ -189,7 +237,104 @@
         </table>
       </div>
     </div>
+    </div>
+    <!-- /viewDashboard -->
+
+    <!-- ===== VIEW: KELOLA PESERTA ===== -->
+    <div id="viewPeserta" class="hidden">
+      <button class="btn-tambah" onclick="bukaModalPeserta(null)">+ Tambah Peserta OJT</button>
+
+      <div class="panel">
+        <h2>Daftar Peserta OJT</h2>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>Nama</th><th>Departemen</th><th>Asal Sekolah</th>
+                <th>Status</th><th>Periode</th><th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="tblPeserta">
+              <tr><td colspan="7" class="loading-row">Memuat data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
+</div>
+
+<!-- ===== MODAL: TAMBAH / EDIT PESERTA ===== -->
+<div id="modalPeserta" class="modal-overlay hidden" onclick="if(event.target===this) tutupModalPeserta()">
+  <div class="modal-box">
+    <h3 id="modalPesertaJudul">Tambah Peserta OJT</h3>
+    <div class="err-msg" id="modalPesertaErr"></div>
+    <input type="hidden" id="mpId">
+    <div class="field">
+      <label>Nama Lengkap</label>
+      <input id="mpNama" type="text" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Departemen</label>
+      <select id="mpDepartemen"></select>
+    </div>
+    <div class="field">
+      <label>Asal Sekolah</label>
+      <input id="mpAsalSekolah" type="text" autocomplete="off">
+    </div>
+    <div class="field" id="mpPinWrap">
+      <label>PIN Awal (4-8 digit angka)</label>
+      <div style="display:flex; gap:8px;">
+        <input id="mpPin" type="text" inputmode="numeric" autocomplete="off" style="flex:1;">
+        <button type="button" class="btn btn-outline" style="flex:0 0 auto; padding:10px 14px;" onclick="acakPin('mpPin')">🎲 Acak</button>
+      </div>
+    </div>
+    <div class="field" id="mpStatusWrap" style="display:none;">
+      <label>Status</label>
+      <select id="mpStatus">
+        <option value="Aktif">Aktif</option>
+        <option value="Nonaktif">Nonaktif</option>
+      </select>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Tanggal Mulai (opsional)</label>
+        <input id="mpTanggalMulai" type="date">
+      </div>
+      <div class="field">
+        <label>Tanggal Selesai (opsional)</label>
+        <input id="mpTanggalSelesai" type="date">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="tutupModalPeserta()">Batal</button>
+      <button class="btn" id="btnSimpanPeserta" onclick="simpanPeserta()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: RESET PIN ===== -->
+<div id="modalResetPin" class="modal-overlay hidden" onclick="if(event.target===this) tutupModalResetPin()">
+  <div class="modal-box">
+    <h3>Reset PIN</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">
+      Peserta: <b id="rpNamaTampil" style="color:var(--ink);">-</b>
+    </p>
+    <div class="err-msg" id="modalResetPinErr"></div>
+    <input type="hidden" id="rpId">
+    <div class="field">
+      <label>PIN Baru (4-8 digit angka)</label>
+      <div style="display:flex; gap:8px;">
+        <input id="rpPinBaru" type="text" inputmode="numeric" autocomplete="off" style="flex:1;">
+        <button type="button" class="btn btn-outline" style="flex:0 0 auto; padding:10px 14px;" onclick="acakPin('rpPinBaru')">🎲 Acak</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="tutupModalResetPin()">Batal</button>
+      <button class="btn" id="btnSimpanResetPin" onclick="simpanResetPin()">Reset PIN</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -200,6 +345,8 @@ const $ = (id) => document.getElementById(id);
 let adminToken = localStorage.getItem('absensi_admin_token') || null;
 let currentRows = [];
 let autoRefreshTimer = null;
+let daftarPesertaCache = [];
+let daftarDepartemenTerkini = [];
 let chartKehadiranInst = null, chartJamKerjaInst = null;
 
 async function callApi(payload){
@@ -278,6 +425,7 @@ function adminCacheTandai(key){
 
 function applyAdminData(r, departemen, asalSekolah){
   currentRows = r.rows;
+  daftarDepartemenTerkini = r.daftarDepartemen || [];
   renderDeptFilter(r.daftarDepartemen, departemen);
   renderAsalSekolahFilter(r.daftarAsalSekolah, asalSekolah);
   renderSummary(r.summary);
@@ -431,6 +579,218 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi');
   const fname = `Rekap_Absensi_OJT_${$('fStart').value}_sd_${$('fEnd').value}.xlsx`;
   XLSX.writeFile(wb, fname);
+}
+
+/* ====== TAB SWITCHER ====== */
+function gantiTab(tab){
+  const isDash = tab === 'dashboard';
+  $('viewDashboard').classList.toggle('hidden', !isDash);
+  $('viewPeserta').classList.toggle('hidden', isDash);
+  $('tabDashboardBtn').classList.toggle('active', isDash);
+  $('tabPesertaBtn').classList.toggle('active', !isDash);
+  if(!isDash) muatDaftarPeserta();
+}
+
+/* ====== KELOLA PESERTA ====== */
+async function muatDaftarPeserta(){
+  $('tblPeserta').innerHTML = '<tr><td colspan="7" class="loading-row"><span class="spin"></span>Memuat data…</td></tr>';
+  try{
+    const r = await callApi({ action:'adminListPeserta', token: adminToken });
+    if(!r.success){
+      if(r.forceLogout){ doAdminLogout(); return; }
+      $('tblPeserta').innerHTML = `<tr><td colspan="7" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
+      return;
+    }
+    daftarPesertaCache = r.peserta;
+    renderTabelPeserta(r.peserta);
+  }catch(e){
+    $('tblPeserta').innerHTML = '<tr><td colspan="7" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
+  }
+}
+
+function renderTabelPeserta(list){
+  if(!list.length){
+    $('tblPeserta').innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada peserta OJT terdaftar.</td></tr>';
+    return;
+  }
+  $('tblPeserta').innerHTML = list.map(p => {
+    const periode = (p.tanggalMulai || p.tanggalSelesai)
+      ? `${p.tanggalMulai || '?'} – ${p.tanggalSelesai || '?'}`
+      : '-';
+    const badgeCls = p.status === 'Aktif' ? 'masuk' : 'nonaktif';
+    return `
+      <tr>
+        <td>${p.id}</td>
+        <td>${p.nama}</td>
+        <td>${p.departemen || '-'}</td>
+        <td>${p.asalSekolah || '-'}</td>
+        <td><span class="badge ${badgeCls}">${p.status}</span></td>
+        <td>${periode}</td>
+        <td>
+          <button class="aksi-btn" onclick='bukaModalPeserta(${JSON.stringify(p)})'>Edit</button>
+          <button class="aksi-btn warn" onclick="bukaModalResetPin('${p.id}','${p.nama.replace(/'/g,"\\'")}')">Reset PIN</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function acakPin(inputId){
+  const pin = String(Math.floor(1000 + Math.random() * 9000)); // 4 digit acak
+  $(inputId).value = pin;
+}
+
+/* ---- Modal Tambah/Edit Peserta ---- */
+function isiDropdownDepartemenModal(selected){
+  const sel = $('mpDepartemen');
+  const list = daftarDepartemenTerkini.length ? daftarDepartemenTerkini : [];
+  sel.innerHTML = list.map(d => `<option value="${d}">${d}</option>`).join('') +
+    '<option value="__lainnya__">Lainnya (ketik manual)…</option>';
+  if(selected && !list.includes(selected)){
+    sel.innerHTML = `<option value="${selected}">${selected}</option>` + sel.innerHTML;
+  }
+  sel.value = selected || (list[0] || '__lainnya__');
+}
+
+function bukaModalPeserta(peserta){
+  $('modalPesertaErr').style.display = 'none';
+  const edit = !!peserta;
+  $('modalPesertaJudul').textContent = edit ? 'Edit Peserta OJT' : 'Tambah Peserta OJT';
+  $('mpId').value = edit ? peserta.id : '';
+  $('mpNama').value = edit ? peserta.nama : '';
+  $('mpAsalSekolah').value = edit ? (peserta.asalSekolah || '') : '';
+  $('mpTanggalMulai').value = edit ? (peserta.tanggalMulai || '') : '';
+  $('mpTanggalSelesai').value = edit ? (peserta.tanggalSelesai || '') : '';
+  isiDropdownDepartemenModal(edit ? peserta.departemen : null);
+
+  // PIN cuma diisi saat TAMBAH peserta baru — edit tidak boleh diam-diam ganti PIN,
+  // itu harus lewat modal Reset PIN yang terpisah & jelas maksudnya.
+  $('mpPinWrap').style.display = edit ? 'none' : 'block';
+  $('mpPin').value = '';
+  $('mpStatusWrap').style.display = edit ? 'block' : 'none';
+  if(edit) $('mpStatus').value = peserta.status;
+
+  $('modalPeserta').classList.remove('hidden');
+}
+
+function tutupModalPeserta(){
+  $('modalPeserta').classList.add('hidden');
+}
+
+async function simpanPeserta(){
+  const id = $('mpId').value;
+  const edit = !!id;
+  const nama = $('mpNama').value.trim();
+  let departemen = $('mpDepartemen').value;
+  if(departemen === '__lainnya__'){
+    departemen = prompt('Ketik nama departemen baru:') || '';
+    departemen = departemen.trim();
+  }
+  const asalSekolah = $('mpAsalSekolah').value.trim();
+  const tanggalMulai = $('mpTanggalMulai').value;
+  const tanggalSelesai = $('mpTanggalSelesai').value;
+  const err = $('modalPesertaErr');
+  err.style.display = 'none';
+
+  if(!nama || !departemen){
+    err.textContent = 'Nama dan Departemen wajib diisi.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnSimpanPeserta');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Menyimpan…';
+
+  try{
+    let r;
+    if(edit){
+      const status = $('mpStatus').value;
+      r = await callApi({
+        action:'adminUpdatePeserta', token: adminToken, id, nama, departemen, asalSekolah,
+        status, tanggalMulai, tanggalSelesai
+      });
+    }else{
+      const pin = $('mpPin').value.trim();
+      if(!/^\d{4,8}$/.test(pin)){
+        err.textContent = 'PIN harus angka, 4-8 digit.';
+        err.style.display = 'block';
+        return;
+      }
+      r = await callApi({
+        action:'adminTambahPeserta', token: adminToken, nama, departemen, asalSekolah,
+        pin, tanggalMulai, tanggalSelesai
+      });
+    }
+    if(!r.success){
+      if(r.forceLogout){ doAdminLogout(); return; }
+      err.textContent = r.message || 'Gagal menyimpan.';
+      err.style.display = 'block';
+      return;
+    }
+    tutupModalPeserta();
+    muatDaftarPeserta();
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Simpan';
+  }
+}
+
+/* ---- Modal Reset PIN ---- */
+function bukaModalResetPin(id, nama){
+  $('modalResetPinErr').style.display = 'none';
+  $('rpId').value = id;
+  $('rpNamaTampil').textContent = `${nama} (${id})`;
+  $('rpPinBaru').value = '';
+  $('modalResetPin').classList.remove('hidden');
+}
+
+function tutupModalResetPin(){
+  $('modalResetPin').classList.add('hidden');
+}
+
+async function simpanResetPin(){
+  const id = $('rpId').value;
+  const pinBaru = $('rpPinBaru').value.trim();
+  const err = $('modalResetPinErr');
+  err.style.display = 'none';
+
+  if(!/^\d{4,8}$/.test(pinBaru)){
+    err.textContent = 'PIN harus angka, 4-8 digit.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const btn = $('btnSimpanResetPin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Menyimpan…';
+
+  try{
+    const r = await callApi({ action:'adminResetPin', token: adminToken, id, pinBaru });
+    if(!r.success){
+      if(r.forceLogout){ doAdminLogout(); return; }
+      err.textContent = r.message || 'Gagal reset PIN.';
+      err.style.display = 'block';
+      return;
+    }
+    tutupModalResetPin();
+    showToastAdmin(`PIN untuk ${id} berhasil direset ke ${pinBaru}. Sampaikan ke peserta.`);
+  }catch(e){
+    err.textContent = 'Tidak dapat terhubung ke server.';
+    err.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Reset PIN';
+  }
+}
+
+// Toast sederhana khusus dashboard admin (belum ada elemen toast di admin.html
+// sebelumnya — dipakai utk konfirmasi non-blocking spt reset PIN berhasil)
+function showToastAdmin(msg){
+  alert(msg); // sengaja pakai alert: PIN baru HARUS dibaca admin sebelum hilang dari layar
 }
 
 /* ====== INIT ====== */
