@@ -245,6 +245,28 @@
 
     <!-- ===== VIEW: KELOLA PESERTA ===== -->
     <div id="viewPeserta" class="hidden">
+      <div class="filters">
+        <div class="field" style="grid-column:1 / -1;">
+          <label>Cari Nama / ID</label>
+          <input type="text" id="pfCari" placeholder="Ketik nama atau ID OJT…" oninput="terapkanFilterPeserta()">
+        </div>
+        <div class="field">
+          <label>Departemen</label>
+          <select id="pfDept" onchange="terapkanFilterPeserta()"><option value="">Semua Departemen</option></select>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select id="pfStatus" onchange="terapkanFilterPeserta()">
+            <option value="">Semua Status</option>
+            <option value="Aktif">Aktif</option>
+            <option value="Nonaktif">Nonaktif</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn btn-outline" onclick="resetFilterPeserta()">Reset Filter</button>
+        </div>
+      </div>
+
       <button class="btn-tambah" onclick="bukaModalPeserta(null)">+ Tambah Peserta OJT</button>
 
       <div class="panel">
@@ -605,15 +627,67 @@ async function muatDaftarPeserta(){
       return;
     }
     daftarPesertaCache = r.peserta;
-    renderTabelPeserta(r.peserta);
+
+    // FIX: daftarDepartemenTerkini sebelumnya HANYA terisi lewat tab Dashboard
+    // (loadData -> applyAdminData). Kalau admin buka tab Kelola Peserta duluan tanpa
+    // pernah ke Dashboard, variabel ini tetap [] -> dropdown Departemen di modal
+    // Tambah/Edit Peserta cuma nampilin "Lainnya (ketik manual)...". Sekarang diturunkan
+    // langsung dari data peserta yg baru dimuat (digabung dgn yg mungkin sudah ada dari
+    // Dashboard), jadi SELALU terisi apapun urutan tab yang dibuka duluan.
+    const depSet = {};
+    daftarDepartemenTerkini.forEach(d => depSet[d] = true);
+    r.peserta.forEach(p => { if(p.departemen) depSet[String(p.departemen).trim()] = true; });
+    daftarDepartemenTerkini = Object.keys(depSet).sort();
+
+    renderDeptFilterPeserta(daftarDepartemenTerkini);
+    terapkanFilterPeserta();
   }catch(e){
     $('tblPeserta').innerHTML = '<tr><td colspan="7" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
   }
 }
 
+// Dropdown filter Departemen KHUSUS tab Kelola Peserta (elemen #pfDept) — terpisah
+// dari #fDept milik tab Dashboard, supaya filter kedua tab independen satu sama lain.
+function renderDeptFilterPeserta(list){
+  const sel = $('pfDept');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Semua Departemen</option>' +
+    list.map(d => `<option value="${d}">${d}</option>`).join('');
+  if(list.includes(current)) sel.value = current;
+}
+
+// Filter client-side terhadap daftarPesertaCache (data sudah ada di memori, jadi
+// langsung filter tiap ketik/pilih tanpa perlu panggil server ulang / tombol "Terapkan").
+function terapkanFilterPeserta(){
+  const cari = $('pfCari').value.trim().toLowerCase();
+  const dept = $('pfDept').value;
+  const status = $('pfStatus').value;
+
+  const hasil = daftarPesertaCache.filter(p => {
+    if(dept && p.departemen !== dept) return false;
+    if(status && p.status !== status) return false;
+    if(cari){
+      const gabungan = (String(p.id) + ' ' + String(p.nama)).toLowerCase();
+      if(!gabungan.includes(cari)) return false;
+    }
+    return true;
+  });
+  renderTabelPeserta(hasil);
+}
+
+function resetFilterPeserta(){
+  $('pfCari').value = '';
+  $('pfDept').value = '';
+  $('pfStatus').value = '';
+  terapkanFilterPeserta();
+}
+
 function renderTabelPeserta(list){
   if(!list.length){
-    $('tblPeserta').innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada peserta OJT terdaftar.</td></tr>';
+    const pesan = daftarPesertaCache.length
+      ? 'Tidak ada peserta yang cocok dengan filter.'
+      : 'Belum ada peserta OJT terdaftar.';
+    $('tblPeserta').innerHTML = `<tr><td colspan="7" class="empty-state">${pesan}</td></tr>`;
     return;
   }
   $('tblPeserta').innerHTML = list.map(p => {
