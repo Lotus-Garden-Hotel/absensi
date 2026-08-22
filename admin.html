@@ -69,6 +69,14 @@
   .btn-outline{ background:#fff; color:var(--green); border:1.5px solid var(--green); }
   .btn-outline:hover{ background:var(--cream-deep); }
 
+  .quick-range{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    border:1.5px solid #e6dfc9; background:var(--cream); color:var(--ink); border-radius:20px;
+    padding:8px 16px; font-family:'Jost',sans-serif; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .chip:hover{ border-color:var(--gold); }
+  .chip.active{ background:var(--green); border-color:var(--green); color:#fff; }
+
   .cards{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:18px; }
   .stat-card{ background:#fff; border-radius:12px; padding:14px 16px; border:1px solid #eee3c4; }
   .stat-card .k{ font-size:10.5px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-soft); font-weight:500;}
@@ -183,6 +191,15 @@
 
     <div id="viewDashboard">
     <div class="filters">
+      <div class="field" style="grid-column:1 / -1;">
+        <label>Rentang Cepat</label>
+        <div class="quick-range">
+          <button type="button" class="chip" onclick="setRentangCepat('hari-ini', this)">Hari Ini</button>
+          <button type="button" class="chip" onclick="setRentangCepat('kemarin', this)">Kemarin</button>
+          <button type="button" class="chip" onclick="setRentangCepat('minggu-ini', this)">Minggu Ini</button>
+          <button type="button" class="chip" onclick="setRentangCepat('bulan-ini', this)">Bulan Ini</button>
+        </div>
+      </div>
       <div class="field">
         <label>Dari Tanggal</label>
         <input type="date" id="fStart">
@@ -288,6 +305,7 @@
     </div>
 
   </main>
+  <div id="footerVersion" style="text-align:center; font-size:10.5px; color:var(--ink-soft); padding:16px 0 24px;"></div>
 </div>
 
 <!-- ===== MODAL: TAMBAH / EDIT PESERTA ===== -->
@@ -417,8 +435,10 @@ function enterDashboard(){
 
   const today = new Date();
   const first = new Date(today.getFullYear(), today.getMonth(), 1);
-  $('fStart').value = first.toISOString().slice(0,10);
-  $('fEnd').value = today.toISOString().slice(0,10);
+  $('fStart').value = fmtTanggalLokal(first);
+  $('fEnd').value = fmtTanggalLokal(today);
+  const chipBulanIni = document.querySelector('.quick-range .chip:nth-child(4)');
+  if(chipBulanIni) chipBulanIni.classList.add('active');
 
   loadData();
   // Auto-refresh tiap 45 detik selagi dashboard terbuka, supaya tidak perlu
@@ -427,10 +447,62 @@ function enterDashboard(){
   autoRefreshTimer = setInterval(loadData, 45000);
 }
 
+// Format tanggal ke YYYY-MM-DD berdasar tanggal LOKAL (bukan toISOString yg pakai UTC).
+// Penting utk WIB (UTC+7): toISOString() bisa mundur 1 hari kalau dipanggil dini hari,
+// yg akan bikin preset "Hari Ini" salah nunjuk ke tanggal kemarin.
+function fmtTanggalLokal(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const t = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${t}`;
+}
+
+// Preset rentang tanggal cepat: Hari Ini / Kemarin / Minggu Ini (Senin—hari ini) / Bulan Ini.
+function setRentangCepat(kind, btn){
+  const today = new Date();
+  let start, end;
+
+  if(kind === 'hari-ini'){
+    start = end = today;
+  }else if(kind === 'kemarin'){
+    const kmr = new Date(today);
+    kmr.setDate(kmr.getDate() - 1);
+    start = end = kmr;
+  }else if(kind === 'minggu-ini'){
+    // Senin sbg awal minggu (getDay(): 0=Minggu...6=Sabtu)
+    const hari = today.getDay();
+    const mundurKeSenin = hari === 0 ? 6 : hari - 1;
+    start = new Date(today);
+    start.setDate(start.getDate() - mundurKeSenin);
+    end = today;
+  }else if(kind === 'bulan-ini'){
+    start = new Date(today.getFullYear(), today.getMonth(), 1);
+    end = today;
+  }else{
+    return;
+  }
+
+  $('fStart').value = fmtTanggalLokal(start);
+  $('fEnd').value = fmtTanggalLokal(end);
+
+  document.querySelectorAll('.quick-range .chip').forEach(c => c.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+
+  loadData();
+}
+
 // ====== CACHE LOKAL (localStorage) — tampil instan, lalu diam-diam refresh ======
-const ADMIN_CACHE_PREFIX = 'admin_cache_';
-const ADMIN_CACHE_INDEX_KEY = 'admin_cache_index'; // daftar key cache + timestamp, utk pruning
+// PENTING: ADMIN_VERSION dipakai sbg bagian dari prefix cache & ditampilkan di footer
+// halaman. Setiap kali logika cache/filter diubah, NAIKKAN angka ini — otomatis
+// membuat semua cache localStorage LAMA "tidak terlihat" oleh kode baru (data lama
+// yg mungkin korup dari bug sebelumnya tidak akan pernah terbaca lagi), dan angka
+// di footer bisa dipakai memastikan browser benar2 sudah load file yang terbaru.
+const ADMIN_VERSION = 'v17-fix-cache-basi';
+const ADMIN_CACHE_PREFIX = 'admin_cache_' + ADMIN_VERSION + '_';
+const ADMIN_CACHE_INDEX_KEY = 'admin_cache_index_' + ADMIN_VERSION;
 const ADMIN_CACHE_MAX = 15; // maks kombinasi filter yg disimpan, biar localStorage tidak membengkak
+let loadDataSeq = 0; // penanda urutan request — cegah respons yg datang belakangan (tapi
+                      // sebenarnya lebih lama) menimpa balik tampilan dari klik terbaru
 
 function adminCacheKey(startDate, endDate, departemen, asalSekolah){
   return ADMIN_CACHE_PREFIX + [startDate, endDate, departemen || '', asalSekolah || ''].join('|');
@@ -470,6 +542,8 @@ function applyAdminData(r, departemen, asalSekolah){
 }
 
 async function loadData(){
+  const mySeq = ++loadDataSeq; // request ke berapa ini — dipakai buat validasi di bawah
+
   const startDate = $('fStart').value;
   const endDate = $('fEnd').value;
   const departemen = $('fDept').value;
@@ -482,6 +556,11 @@ async function loadData(){
     const raw = localStorage.getItem(cacheKey);
     if(raw) cached = JSON.parse(raw);
   }catch(e){ cached = null; }
+
+  // Kalau ada request LAIN yg sudah mulai setelah kita (mis. user klik chip lain
+  // secepat kilat), jangan repot-repot tampilkan cache dari request basi ini —
+  // biar tidak sempat "berkedip" ke data yang salah sebelum ditimpa lagi.
+  if(mySeq !== loadDataSeq) return;
 
   if(cached){
     // Tampil instan dari cache — tidak ada spinner terasa.
@@ -497,6 +576,13 @@ async function loadData(){
   // tampilan sudah terisi, lalu diam-diam diganti data terbaru begitu server merespons.
   try{
     const r = await callApi({ action:'adminGetData', token: adminToken, startDate, endDate, departemen, asalSekolah });
+
+    // PENJAGA UTAMA race condition: kalau selagi kita nunggu respons ini, ada
+    // request LAIN yang sudah mulai (mis. user keburu klik chip/filter lain),
+    // maka respons kita ini sudah BASI — buang, jangan sampai menimpa tampilan
+    // yang seharusnya menunjukkan hasil klik paling baru.
+    if(mySeq !== loadDataSeq) return;
+
     if(!r.success){
       if(r.forceLogout){ doAdminLogout(); return; }
       if(!cached) $('tblBody').innerHTML = `<tr><td colspan="8" class="empty-state">${r.message || 'Gagal memuat data.'}</td></tr>`;
@@ -507,6 +593,7 @@ async function loadData(){
     applyAdminData(r, departemen, asalSekolah);
     $('lastUpdated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
   }catch(e){
+    if(mySeq !== loadDataSeq) return; // sama, buang error dari request basi
     console.error('Gagal memuat data absensi:', e);
     if(!cached){
       $('tblBody').innerHTML = '<tr><td colspan="8" class="empty-state">Tidak dapat terhubung ke server.</td></tr>';
@@ -704,8 +791,8 @@ function renderTabelPeserta(list){
         <td><span class="badge ${badgeCls}">${p.status}</span></td>
         <td>${periode}</td>
         <td>
-          <button class="aksi-btn" onclick='bukaModalPeserta(${JSON.stringify(p)})'>Edit</button>
-          <button class="aksi-btn warn" onclick="bukaModalResetPin('${p.id}','${p.nama.replace(/'/g,"\\'")}')">Reset PIN</button>
+          <button class="aksi-btn" onclick="bukaModalPesertaById('${p.id}')">Edit</button>
+          <button class="aksi-btn warn" onclick="bukaModalResetPinById('${p.id}')">Reset PIN</button>
         </td>
       </tr>
     `;
@@ -729,7 +816,31 @@ function isiDropdownDepartemenModal(selected){
   sel.value = selected || (list[0] || '__lainnya__');
 }
 
+// Cari peserta dari cache (daftarPesertaCache) by ID — lebih aman daripada nyuntik
+// JSON/string mentah ke atribut HTML onclick, yang bisa rusak kalau Nama/Asal
+// Sekolah peserta mengandung tanda kutip (mis. dari input bebas saat Daftar Mandiri).
+function cariPesertaById(id){
+  return daftarPesertaCache.find(p => p.id === id) || null;
+}
+function bukaModalPesertaById(id){
+  const p = cariPesertaById(id);
+  if(p) bukaModalPeserta(p);
+}
+function bukaModalResetPinById(id){
+  const p = cariPesertaById(id);
+  if(p) bukaModalResetPin(p.id, p.nama);
+}
+
+// Pastikan cuma 1 modal yang aktif dalam satu waktu — jaga-jaga kalau ada cara
+// lain modal bisa terbuka bersamaan (mis. klik ganda cepat), supaya tidak
+// tumpang-tindih seperti yang pernah terjadi.
+function tutupSemuaModal(){
+  $('modalPeserta').classList.add('hidden');
+  $('modalResetPin').classList.add('hidden');
+}
+
 function bukaModalPeserta(peserta){
+  tutupSemuaModal();
   $('modalPesertaErr').style.display = 'none';
   const edit = !!peserta;
   $('modalPesertaJudul').textContent = edit ? 'Edit Peserta OJT' : 'Tambah Peserta OJT';
@@ -818,6 +929,7 @@ async function simpanPeserta(){
 
 /* ---- Modal Reset PIN ---- */
 function bukaModalResetPin(id, nama){
+  tutupSemuaModal();
   $('modalResetPinErr').style.display = 'none';
   $('rpId').value = id;
   $('rpNamaTampil').textContent = `${nama} (${id})`;
@@ -871,8 +983,27 @@ function showToastAdmin(msg){
 }
 
 /* ====== INIT ====== */
+
+// Bersihkan cache dari skema versi LAMA (sebelum ADMIN_VERSION ada) — ini
+// menghapus kemungkinan data korup yg tersimpan sewaktu bug race condition
+// masih ada, supaya tidak pernah terbaca lagi oleh kode baru.
+Object.keys(localStorage).forEach(k => {
+  if(k.startsWith('admin_cache_') && !k.startsWith(ADMIN_CACHE_PREFIX) && !k.startsWith('admin_cache_index')){
+    localStorage.removeItem(k);
+  }
+  if(k === 'admin_cache_index'){ // nama index lama (tanpa versi)
+    localStorage.removeItem(k);
+  }
+});
+$('footerVersion').textContent = 'Absensi Lotus Garden — ' + ADMIN_VERSION;
+
 if(adminToken){ enterDashboard(); }
 $('inpPass').addEventListener('keydown', e => { if(e.key==='Enter') doAdminLogin(); });
+['fStart','fEnd'].forEach(id => {
+  $(id).addEventListener('change', () => {
+    document.querySelectorAll('.quick-range .chip').forEach(c => c.classList.remove('active'));
+  });
+});
 </script>
 </body>
 </html>
